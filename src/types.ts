@@ -43,6 +43,8 @@ export interface Receipt {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  /** Tax rate in percent, when known (printed or learned for the store). */
+  taxRate?: number;
   total: number;
   /** Amount the receipt reports as saved (informational only). */
   savings?: number;
@@ -71,6 +73,11 @@ export interface Settings {
   apiBaseUrl: string;
   /** Push each saved receipt to the backend so it is available across devices. */
   backendSync: boolean;
+  /**
+   * Default tax rate in percent, used when a receipt shows no tax and the app
+   * has not yet learned a rate for that store. Zero means "do not add tax".
+   */
+  defaultTaxRate: number;
   theme: 'light' | 'dark';
 }
 
@@ -84,6 +91,7 @@ export const DEFAULT_SETTINGS: Settings = {
   enhanceScan: true,
   apiBaseUrl: '',
   backendSync: false,
+  defaultTaxRate: 0,
   theme: 'light',
 };
 

@@ -309,7 +309,12 @@ function dataContext(receipts: Receipt[], currency: string): string {
   const lines: string[] = [];
   const sorted = [...receipts].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 200);
   for (const r of sorted) {
-    lines.push(`# ${r.date} | ${r.merchant} | total ${money(receiptTotal(r), currency)}`);
+    lines.push(
+      `# ${r.date} | ${r.merchant} | total ${money(receiptTotal(r), currency)}` +
+        (r.tax !== undefined
+          ? ` | tax ${money(r.tax, currency)}${r.taxRate ? ` (${r.taxRate}%)` : ''}`
+          : ''),
+    );
     for (const it of r.items.slice(0, 40)) {
       lines.push(`  - ${it.name} | ${it.category} | qty ${it.qty} | ${money(it.price, currency)}`);
     }

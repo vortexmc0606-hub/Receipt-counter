@@ -14,7 +14,9 @@ export function dataContext(receipts: Receipt[], currency: string): string {
   const lines: string[] = [];
   const sorted = [...receipts].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 200);
   for (const r of sorted) {
-    lines.push(`# ${r.date} | ${r.merchant} | total ${money(total(r))}`);
+    const taxNote =
+      r.tax !== undefined ? ` | tax ${money(r.tax)}${r.taxRate ? ` (${r.taxRate}%)` : ''}` : '';
+    lines.push(`# ${r.date} | ${r.merchant} | total ${money(total(r))}${taxNote}`);
     for (const it of r.items.slice(0, 40)) {
       lines.push(`  - ${it.name} | ${it.category} | qty ${it.qty} | ${money(it.price)}`);
     }

@@ -1,4 +1,5 @@
 import type { AiReadResult, Category, ChatMessage, ReceiptItem } from '../types.js';
+import { resolveTax } from './tax.js';
 
 /**
  * Talks to an OpenAI-compatible chat-completions endpoint. The API key stays on
@@ -117,9 +118,10 @@ const READ_PROMPT = `You are an expert receipt parser. Read the attached receipt
 Extract, in this order:
 1. "total": the printed TOTAL / AMOUNT DUE / BALANCE line (the final amount paid).
 2. "subtotal": the printed SUBTOTAL line value.
-3. "tax": the printed TAX / VAT / GST line value.
-4. "savings": the printed "YOU SAVED" / "TOTAL SAVINGS" / member savings value, or null.
-5. "items": every purchased line, each with its line total (the amount charged for that line). If a line shows "2 @ 8.99  17.98", the line total is 17.98 and qty is 2.
+3. "tax": the printed TAX / VAT / GST line amount, or null if the receipt prints no tax amount.
+4. "taxRate": the tax rate in percent when the receipt prints one (e.g. 8.25 for "SALES TAX 8.25%", 20 for "VAT 20%"), else null. Do not compute a rate yourself — report only what is printed.
+5. "savings": the printed "YOU SAVED" / "TOTAL SAVINGS" / member savings value, or null.
+6. "items": every purchased line, each with its line total (the amount charged for that line). If a line shows "2 @ 8.99  17.98", the line total is 17.98 and qty is 2.
 
 Never put subtotal, tax, total, savings, change, card/payment lines, or the store address/header into "items".
 
@@ -131,6 +133,7 @@ Return exactly this JSON shape:
   "items": [{ "name": string, "qty": number, "price": number, "category": string, "code": string | null }],
   "subtotal": number | null,
   "tax": number | null,
+  "taxRate": number | null,
   "total": number | null,
   "savings": number | null
 }
@@ -207,11 +210,24 @@ export async function readReceipt(cfg: LlmConfig, dataUrl: string): Promise<AiRe
   }
 
   const subtotal = coerceNumber(parsed.subtotal) ?? undefined;
-  const tax = coerceNumber(parsed.tax) ?? undefined;
+  const taxAmount = coerceNumber(parsed.tax) ?? undefined;
+  const taxRateRead = coerceNumber(parsed.taxRate) ?? undefined;
   const savings = coerceNumber(parsed.savings) ?? undefined;
   const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
 
   let total = coerceNumber(parsed.total) ?? 0;
+  const taxResult = resolveTax({
+    subtotal,
+    itemsSum,
+    total: total > 0 ? total : undefined,
+    tax: taxAmount,
+    printedRate: taxRateRead,
+    taxLinePresent: taxAmount !== undefined || taxRateRead !== undefined,
+  });
+  const tax = taxResult.tax;
+  const taxRate = taxResult.rate;
+  if (taxResult.note) warnings.push(taxResult.note);
+
   const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
   if (total <= 0) total = expected ?? itemsSum;
   if (subtotal !== undefined && Math.abs(subtotal - itemsSum) > Math.max(0.5, itemsSum * 0.05)) {
@@ -227,6 +243,7 @@ export async function readReceipt(cfg: LlmConfig, dataUrl: string): Promise<AiRe
     items,
     subtotal,
     tax,
+    taxRate,
     total: round2(total),
     savings,
     rawText: content,

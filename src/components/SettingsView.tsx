@@ -74,6 +74,22 @@ export function SettingsView({
             />
           </div>
           <div className="field">
+            <label>Default tax rate %</label>
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0"
+              value={draft.defaultTaxRate || ''}
+              onChange={(e) => patch({ defaultTaxRate: e.target.value === '' ? 0 : Number(e.target.value) })}
+            />
+            <p className="tiny muted" style={{ marginTop: 4 }}>
+              Used when a receipt shows no tax and the app has not yet learned a rate for that store.
+              Leave at 0 to never add tax automatically.
+            </p>
+          </div>
+          <div className="field">
             <label>Theme</label>
             <div className="row">
               <button

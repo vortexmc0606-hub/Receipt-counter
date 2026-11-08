@@ -93,7 +93,7 @@ export default function App() {
         void pushBackendReceipt(receipt, settings).catch(() => undefined);
       }
       if (original) {
-        const next = learnFromSave(original, receipt, learning);
+        const next = learnFromSave(original, receipt, learning, settings.defaultTaxRate);
         await saveLearning(next);
         setLearning(next);
       }

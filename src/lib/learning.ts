@@ -1,6 +1,7 @@
 import type { ParsedReceipt } from './parser';
 import type { Category, Receipt, ReceiptItem } from '../types';
 import { recognizeStore, storeKind, type StoreKind } from './stores';
+import { hasTaxLabel, rateFromAmounts, round2, taxFromRate } from './tax';
 
 /**
  * A lightweight, on-device learning layer.
@@ -58,12 +59,27 @@ export interface LearnedStore {
   lastSeen: number;
 }
 
+/**
+ * The tax rate a store charges, learned from receipts that print one (or from
+ * the amount and base). Later receipts from the same store can have their tax
+ * calculated even when the rate is not printed.
+ */
+export interface LearnedTaxRate {
+  /** Normalised store name this rate applies to. */
+  store: string;
+  /** Rate in percent (e.g. 8.25). */
+  rate: number;
+  count: number;
+  lastSeen: number;
+}
+
 export interface LearningData {
   version: 1;
   items: LearnedItem[];
   tokenFixes: TokenFix[];
   junk: JunkLine[];
   stores: LearnedStore[];
+  taxRates: LearnedTaxRate[];
   /** Number of receipts whose corrections have been folded in. */
   trainedOn: number;
 }
@@ -74,6 +90,7 @@ export const EMPTY_LEARNING: LearningData = {
   tokenFixes: [],
   junk: [],
   stores: [],
+  taxRates: [],
   trainedOn: 0,
 };
 
@@ -81,6 +98,7 @@ const MAX_ITEMS = 2000;
 const MAX_FIXES = 1500;
 const MAX_JUNK = 500;
 const MAX_STORES = 1000;
+const MAX_TAX_RATES = 500;
 
 /** Lowercases and strips punctuation/spacing so near-identical lines match. */
 export function normalizeName(s: string): string {
@@ -116,9 +134,14 @@ export interface AppliedLearning {
 
 /**
  * Replays everything learned onto a freshly parsed receipt: renames/reclassifies
- * known lines, drops known junk lines, and applies token fixes.
+ * known lines, drops known junk lines, and applies token fixes. Also fills in a
+ * tax amount when the receipt shows a tax line but no readable figure.
  */
-export function applyLearning(parsed: ParsedReceipt, data: LearningData): AppliedLearning {
+export function applyLearning(
+  parsed: ParsedReceipt,
+  data: LearningData,
+  options: { defaultTaxRate?: number } = {},
+): AppliedLearning {
   const applied: string[] = [];
   const junkSet = new Set(data.junk.map((j) => j.text));
   const exact = new Map(data.items.map((i) => [i.from, i]));
@@ -168,10 +191,51 @@ export function applyLearning(parsed: ParsedReceipt, data: LearningData): Applie
     items.push(next);
   }
 
+  const withTax = applyLearnedTax({ ...parsed, items }, data, applied);
   return {
-    result: { ...parsed, items },
+    result: applyDefaultTax(withTax, options.defaultTaxRate ?? 0, applied),
     applied,
   };
+}
+
+/**
+ * Fills in a tax amount from the user's default rate, but only when the receipt
+ * shows a tax line whose amount could not be read. This never invents tax for a
+ * receipt that appears to have none.
+ */
+function applyDefaultTax(parsed: ParsedReceipt, rate: number, applied: string[]): ParsedReceipt {
+  if (!(rate > 0) || parsed.tax !== undefined) return parsed;
+  if (!hasTaxLabel(parsed.rawText)) return parsed;
+  const itemsSum = round2(parsed.items.reduce((s, i) => s + i.price, 0));
+  const base = parsed.subtotal ?? itemsSum;
+  if (!(base > 0)) return parsed;
+  const tax = taxFromRate(base, rate);
+  if (!(tax > 0)) return parsed;
+  applied.push(`Applied your default tax rate ${rate}%: tax ${tax.toFixed(2)} added.`);
+  const total = parsed.total > base + 0.005 ? parsed.total : round2(base + tax);
+  return { ...parsed, tax, taxRate: rate, total };
+}
+
+/**
+ * Applies a store's learned tax rate when the receipt shows a tax line but no
+ * usable amount. Requiring the tax line keeps a genuinely tax-free receipt from
+ * being given tax it never had. A note explains where the amount came from.
+ */
+function applyLearnedTax(parsed: ParsedReceipt, data: LearningData, applied: string[]): ParsedReceipt {
+  if (parsed.tax !== undefined && parsed.tax > 0) return parsed;
+  if (!hasTaxLabel(parsed.rawText)) return parsed;
+  const rate = taxRateFor(parsed.merchant, data);
+  if (rate === undefined) return parsed;
+  const itemsSum = round2(parsed.items.reduce((s, i) => s + i.price, 0));
+  const base = parsed.subtotal ?? itemsSum;
+  if (!(base > 0)) return parsed;
+  const tax = taxFromRate(base, rate);
+  if (!(tax > 0)) return parsed;
+  applied.push(
+    `Applied the tax rate learned for ${parsed.merchant} (${rate}%): tax ${tax.toFixed(2)} added.`,
+  );
+  const total = parsed.total > base + 0.005 ? parsed.total : round2(base + tax);
+  return { ...parsed, tax, taxRate: rate, total };
 }
 
 function bump<T extends { count: number }>(arr: T[], match: (x: T) => boolean, make: () => T, cap: number): void {
@@ -216,6 +280,7 @@ export function learnFromSave(
   original: ParsedReceipt,
   final: Receipt,
   data: LearningData,
+  defaultTaxRate = 0,
 ): LearningData {
   const next: LearningData = {
     version: 1,
@@ -223,10 +288,26 @@ export function learnFromSave(
     tokenFixes: data.tokenFixes.map((t) => ({ ...t })),
     junk: data.junk.map((j) => ({ ...j })),
     stores: (data.stores ?? []).map((s) => ({ ...s })),
+    taxRates: (data.taxRates ?? []).map((t) => ({ ...t })),
     trainedOn: data.trainedOn,
   };
   const finalByKey = new Map(final.items.map((i) => [normalizeName(i.name), i]));
   let learnedSomething = false;
+
+  // Remember the tax rate this store charges, so tax can be calculated on later
+  // receipts even when the rate is not printed. Prefer the printed rate; fall
+  // back to the rate implied by the tax amount and its base, or to the user's
+  // default rate when the receipt carries none.
+  const taxStore = normalizeName(final.merchant || original.merchant || '');
+  if (taxStore.length >= 3) {
+    const base = final.subtotal ?? round2(final.items.reduce((s, i) => s + i.price, 0));
+    const rate =
+      final.taxRate ??
+      rateFromAmounts(final.tax ?? 0, base) ??
+      original.taxRate ??
+      (hasTaxLabel(original.rawText) ? defaultTaxRate || undefined : undefined);
+    if (rate !== undefined) bumpTaxRate(next, taxStore, rate);
+  }
 
   // Remember the store. If the header the reader produced was mapped to a
   // different canonical name than what the user saved, teach that mapping.
@@ -304,6 +385,32 @@ function bumpStore(data: LearningData, from: string, name: string, kind: StoreKi
 }
 
 /**
+ * Records (or refreshes) the tax rate a store charges. The rate is rounded to a
+ * sensible precision so tiny rounding differences between receipts do not create
+ * duplicate entries.
+ */
+function bumpTaxRate(data: LearningData, store: string, rate: number): void {
+  const r = round2(rate);
+  const existing = data.taxRates.find((t) => t.store === store);
+  if (existing) {
+    existing.rate = r;
+    existing.count += 1;
+    existing.lastSeen = Date.now();
+    return;
+  }
+  if (data.taxRates.length >= MAX_TAX_RATES) data.taxRates.shift();
+  data.taxRates.push({ store, rate: r, count: 1, lastSeen: Date.now() });
+}
+
+/** The learned tax rate (percent) for a store, if one has been learned. */
+export function taxRateFor(store: string, data: LearningData): number | undefined {
+  const key = normalizeName(store);
+  if (!key) return undefined;
+  const hit = (data.taxRates ?? []).find((t) => t.store === key);
+  return hit?.rate;
+}
+
+/**
  * Resolves a receipt's merchant to a canonical store, using everything learned
  * so far. Used when grouping spending by store.
  */
@@ -332,6 +439,7 @@ export function learningSummary(data: LearningData): {
   fixes: number;
   junk: number;
   stores: number;
+  taxRates: number;
   trainedOn: number;
 } {
   return {
@@ -339,6 +447,7 @@ export function learningSummary(data: LearningData): {
     fixes: data.tokenFixes.length,
     junk: data.junk.length,
     stores: (data.stores ?? []).length,
+    taxRates: (data.taxRates ?? []).length,
     trainedOn: data.trainedOn,
   };
 }

@@ -140,7 +140,12 @@ export function ReceiptsView({
           <div className="row" style={{ marginBottom: 16, alignItems: 'center' }}>
             <span className="badge badge-primary">{prettyDate(open.date)}</span>
             <span className="badge">{money(receiptTotal(open), open.currency || currency)}</span>
-            {open.tax !== undefined && <span className="badge">Tax {money(open.tax, open.currency || currency)}</span>}
+            {open.tax !== undefined && (
+              <span className="badge">
+                Tax {money(open.tax, open.currency || currency)}
+                {open.taxRate ? ` (${open.taxRate}%)` : ''}
+              </span>
+            )}
             {open.subtotal !== undefined && (
               <span className="badge">Subtotal {money(open.subtotal, open.currency || currency)}</span>
             )}

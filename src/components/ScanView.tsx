@@ -18,6 +18,7 @@ import { readReceiptWithAI } from '../lib/ai';
 import { hasBackend, readReceiptViaBackend } from '../lib/api';
 import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
 import { applyLearning, type LearningData } from '../lib/learning';
+import { taxFromRate } from '../lib/tax';
 import { money, todayISO } from '../lib/utils';
 import { Modal } from './ui';
 
@@ -30,6 +31,7 @@ interface ReadOutcome {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  taxRate?: number;
   total: number;
   savings?: number;
   rawText: string;
@@ -158,7 +160,7 @@ export function ScanView({
 
         // Replay everything learned from previous corrections.
         const raw = outcome as ParsedReceipt;
-        const learned = applyLearning(raw, learning);
+        const learned = applyLearning(raw, learning, { defaultTaxRate: settings.defaultTaxRate });
         outcome = learned.result;
         // Diff against the raw reader output when learning from the final save.
         originalRef.current = raw;
@@ -175,6 +177,7 @@ export function ScanView({
           items: outcome.items,
           subtotal: outcome.subtotal,
           tax: outcome.tax,
+          taxRate: outcome.taxRate,
           total: outcome.total,
           savings: outcome.savings,
           rawText: outcome.rawText,
@@ -410,7 +413,7 @@ export function ScanView({
                   />
                 </div>
                 <div className="field" style={{ flex: 1 }}>
-                  <label>Tax</label>
+                  <label>Tax {draft.taxRate ? `(${draft.taxRate}%)` : ''}</label>
                   <input
                     className="input"
                     type="number"
@@ -419,6 +422,23 @@ export function ScanView({
                     onChange={(e) =>
                       updateDraft({ tax: e.target.value === '' ? undefined : Number(e.target.value) })
                     }
+                  />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>Tax rate % (optional)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    placeholder="—"
+                    value={draft.taxRate ?? ''}
+                    onChange={(e) => {
+                      const rate = e.target.value === '' ? undefined : Number(e.target.value);
+                      updateDraft({
+                        taxRate: rate,
+                        tax: rate !== undefined ? taxFromRate(draft.subtotal ?? itemsSum, rate) : draft.tax,
+                      });
+                    }}
                   />
                 </div>
                 <div className="field" style={{ flex: 1 }}>

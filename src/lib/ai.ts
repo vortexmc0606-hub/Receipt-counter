@@ -3,6 +3,7 @@ import { CATEGORIES } from '../types';
 import { loadBitmap } from './ocr';
 import { categorize } from './category';
 import { recognizeStore } from './stores';
+import { resolveTax } from './tax';
 
 /**
  * Reads a receipt with a vision-capable LLM instead of on-device OCR.
@@ -19,6 +20,8 @@ export interface AiReadResult {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  /** Tax rate in percent, when the receipt prints one (e.g. 8.25). */
+  taxRate?: number;
   total: number;
   savings?: number;
   rawText: string;
@@ -94,9 +97,10 @@ const PROMPT = `You are an expert receipt parser. Read the attached receipt imag
 Extract, in this order:
 1. "total": the printed TOTAL / AMOUNT DUE / BALANCE line (the final amount paid).
 2. "subtotal": the printed SUBTOTAL line value.
-3. "tax": the printed TAX / VAT / GST line value.
-4. "savings": the printed "YOU SAVED" / "TOTAL SAVINGS" / member savings value, or null.
-5. "items": every purchased line, each with its line total (the amount charged for that line). If a line shows "2 @ 8.99  17.98", the line total is 17.98 and qty is 2.
+3. "tax": the printed TAX / VAT / GST line amount, or null if the receipt prints no tax amount.
+4. "taxRate": the tax rate in percent when the receipt prints one (e.g. 8.25 for "SALES TAX 8.25%", 20 for "VAT 20%"), else null. Do not compute a rate yourself — report only what is printed.
+5. "savings": the printed "YOU SAVED" / "TOTAL SAVINGS" / member savings value, or null.
+6. "items": every purchased line, each with its line total (the amount charged for that line). If a line shows "2 @ 8.99  17.98", the line total is 17.98 and qty is 2.
 
 Never put subtotal, tax, total, savings, change, card/payment lines, or the store address/header into "items".
 
@@ -108,6 +112,7 @@ Return exactly this JSON shape:
   "items": [{ "name": string, "qty": number, "price": number, "category": string, "code": string | null }],
   "subtotal": number | null,
   "tax": number | null,
+  "taxRate": number | null,
   "total": number | null,
   "savings": number | null
 }
@@ -237,7 +242,8 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   }
 
   const subtotal = coerceNumber(parsed.subtotal) ?? undefined;
-  const tax = coerceNumber(parsed.tax) ?? undefined;
+  const taxAmount = coerceNumber(parsed.tax) ?? undefined;
+  const taxRateRead = coerceNumber(parsed.taxRate) ?? undefined;
   const savings = coerceNumber(parsed.savings) ?? undefined;
   const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
 
@@ -245,6 +251,21 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   const merchant = recognizeStore(merchantRaw, items).name;
 
   let total = coerceNumber(parsed.total) ?? 0;
+
+  // Decide the tax amount from a printed amount, a printed rate, or the gap
+  // between the subtotal and the printed total.
+  const taxResult = resolveTax({
+    subtotal,
+    itemsSum,
+    total: total > 0 ? total : undefined,
+    tax: taxAmount,
+    printedRate: taxRateRead,
+    taxLinePresent: taxAmount !== undefined || taxRateRead !== undefined,
+  });
+  const tax = taxResult.tax;
+  const taxRate = taxResult.rate;
+  if (taxResult.note) warnings.push(taxResult.note);
+
   const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
   if (total <= 0) {
     total = expected ?? itemsSum;
@@ -274,6 +295,7 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
     items,
     subtotal,
     tax,
+    taxRate,
     total: round2(total),
     savings,
     rawText: content,

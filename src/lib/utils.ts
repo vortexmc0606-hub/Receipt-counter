@@ -205,11 +205,18 @@ export function download(filename: string, content: string, type = 'application/
 
 export function receiptsToCSV(receipts: Receipt[], currency = '$'): string {
   const rows: string[][] = [
-    ['Date', 'Merchant', 'Item', 'Category', 'Qty', 'Price', 'Receipt Total', 'Currency'],
+    ['Date', 'Merchant', 'Item', 'Category', 'Qty', 'Price', 'Subtotal', 'Tax', 'Tax Rate %', 'Receipt Total', 'Currency'],
   ];
   for (const r of receipts) {
     if (r.items.length === 0) {
-      rows.push([r.date, r.merchant, '', '', '', '', String(r.total), r.currency || currency]);
+      rows.push([
+        r.date, r.merchant, '', '', '', '',
+        r.subtotal?.toFixed(2) ?? '',
+        r.tax?.toFixed(2) ?? '',
+        r.taxRate !== undefined ? String(r.taxRate) : '',
+        String(r.total),
+        r.currency || currency,
+      ]);
       continue;
     }
     for (const item of r.items) {
@@ -220,6 +227,9 @@ export function receiptsToCSV(receipts: Receipt[], currency = '$'): string {
         item.category,
         String(item.qty),
         item.price.toFixed(2),
+        r.subtotal?.toFixed(2) ?? '',
+        r.tax?.toFixed(2) ?? '',
+        r.taxRate !== undefined ? String(r.taxRate) : '',
         r.total.toFixed(2),
         r.currency || currency,
       ]);

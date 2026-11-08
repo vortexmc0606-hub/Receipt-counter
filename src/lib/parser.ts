@@ -1,6 +1,7 @@
 import type { Category, Receipt, ReceiptItem } from '../types';
 import { categorize } from './category';
 import { recognizeStore } from './stores';
+import { extractTaxRate, hasTaxLabel, resolveTax } from './tax';
 
 export function guessCategory(name: string): Category {
   return categorize(name);
@@ -212,6 +213,8 @@ export interface ParsedReceipt {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  /** Tax rate in percent, when the receipt prints one (e.g. 8.25). */
+  taxRate?: number;
   total: number;
   /** Amount the receipt reports as saved, if any. Never added to items or total. */
   savings?: number;
@@ -279,10 +282,16 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   };
 
   const subtotal = amountOnSummaryLine(/\bsub\s*-?\s*total\b|\bsubtotal\b/i);
-  const tax = amountOnSummaryLine(/\b(tax|vat|gst|hst|sales\s+tax)\b/i);
+  const printedTax = amountOnSummaryLine(/\b(tax|vat|gst|hst|sales\s+tax)\b/i);
   const printedTotal = amountOnSummaryLine(
     /\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total)\b/i,
   );
+
+  // Tax is often printed as a rate ("SALES TAX 8.25%") rather than an amount.
+  // When only a rate is printed, the amount is computed from the base
+  // (subtotal, or the sum of the line items). A rate learned for this store on
+  // an earlier receipt is applied afterwards, in applyLearning.
+  const printedRate = extractTaxRate(rawText) ?? undefined;
 
   // Savings are reported, not spent — shown to the user but never counted.
   let savings: number | undefined;
@@ -344,6 +353,21 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
 
   // ---- reconcile total ----
   const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
+
+  // Decide the tax amount: a printed amount wins; otherwise calculate it from
+  // the printed or learned rate.
+  const taxResult = resolveTax({
+    subtotal,
+    itemsSum,
+    total: printedTotal,
+    tax: printedTax,
+    printedRate,
+    taxLinePresent: hasTaxLabel(rawText),
+  });
+  const tax = taxResult.tax;
+  const taxRate = taxResult.rate;
+  if (taxResult.note) warnings.push(taxResult.note);
+
   const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
   const agrees = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.5, b * 0.02);
 
@@ -433,6 +457,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     items,
     subtotal,
     tax,
+    taxRate,
     total: round2(total),
     savings,
     rawText,
@@ -450,6 +475,7 @@ export function parsedToReceipt(p: ParsedReceipt, fallbackCurrency: string): Rec
     items: p.items,
     subtotal: p.subtotal,
     tax: p.tax,
+    taxRate: p.taxRate,
     total: p.total,
     savings: p.savings,
     rawText: p.rawText,

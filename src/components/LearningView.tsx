@@ -23,7 +23,12 @@ export function LearningView({
   const [confirmClear, setConfirmClear] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const summary = learningSummary(data);
-  const empty = summary.lines === 0 && summary.fixes === 0 && summary.junk === 0 && summary.stores === 0;
+  const empty =
+    summary.lines === 0 &&
+    summary.fixes === 0 &&
+    summary.junk === 0 &&
+    summary.stores === 0 &&
+    summary.taxRates === 0;
 
   const exportLearning = () => {
     download(
@@ -78,6 +83,10 @@ export function LearningView({
           <div>
             <div className="stat-value">{summary.stores}</div>
             <div className="stat-label">Stores learned</div>
+          </div>
+          <div>
+            <div className="stat-value">{summary.taxRates}</div>
+            <div className="stat-label">Tax rates learned</div>
           </div>
         </div>
       </div>
@@ -154,6 +163,32 @@ export function LearningView({
                       <strong>{i.name}</strong>
                       {i.price !== undefined && <span className="muted"> ({i.price.toFixed(2)})</span>}
                       <span className="muted"> ×{i.count}</span>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="card card-pad">
+            <h4 className="section-title">
+              <Sparkles size={14} /> Tax rates by store
+            </h4>
+            {data.taxRates.length === 0 ? (
+              <p className="muted">
+                None yet. Scan a receipt that shows a tax rate (e.g. "SALES TAX 8.25%") and save it —
+                the rate is remembered and applied to later receipts from the same store.
+              </p>
+            ) : (
+              <ul className="learning-list">
+                {[...data.taxRates]
+                  .sort((a, b) => b.count - a.count)
+                  .slice(0, 50)
+                  .map((t) => (
+                    <li key={t.store}>
+                      <strong>{t.store}</strong>
+                      <span aria-hidden> → </span>
+                      <span>{t.rate}%</span>
+                      <span className="muted"> ×{t.count}</span>
                     </li>
                   ))}
               </ul>

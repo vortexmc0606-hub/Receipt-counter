@@ -32,6 +32,8 @@ export interface Receipt {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  /** Tax rate in percent, when known (printed or learned for the store). */
+  taxRate?: number;
   total: number;
   savings?: number;
   imageThumb?: string;
@@ -47,6 +49,8 @@ export interface AiReadResult {
   items: ReceiptItem[];
   subtotal?: number;
   tax?: number;
+  /** Tax rate in percent, when the receipt prints one. */
+  taxRate?: number;
   total: number;
   savings?: number;
   rawText: string;
