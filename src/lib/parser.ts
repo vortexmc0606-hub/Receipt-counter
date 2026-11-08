@@ -22,6 +22,9 @@ export function guessCategory(name: string): Category {
 const NON_ITEM =
   /^(sub\s*-?\s*total|subtotal|total|amount\s*due|balance|change|cash|credit|debit|visa|mastercard|amex|card|payment|tax|vat|gst|hst|tip|gratuity|discount|coupon|savings|tendered|auth|approval|invoice|receipt|order|table|server|cashier|thank|welcome|store|tel|phone|www\.|http|date|time|item\s+qty|qty\s+price|transaction|terminal|ref\b|#\d+)/i;
 
+const ADDRESS_LIKE =
+  /^\s*\d+\s+\w+(\s+\w+)*\s+(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|suite|ste)\b/i;
+
 function toNumber(raw: string): number {
   // Handles "1,234.56", "12.50", "12,50" (comma decimal), and trailing minus.
   let s = raw.trim();
@@ -39,25 +42,52 @@ function toNumber(raw: string): number {
   return negative ? -n : n;
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-/** Last price-like token on a line, e.g. "Milk 2L   3.49" -> 3.49 */
-function trailingPrice(line: string): number | null {
-  const m = line.match(/(-?\$?\s?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|-?\$?\s?\d+[.,]\d{2}|\d+)\s*[A-Z]?\s*$/);
-  if (!m) return null;
-  const val = toNumber(m[1]);
-  if (Number.isNaN(val)) return null;
-  return val;
+/**
+ * Amounts on a receipt always carry cents ("3.49"), whereas the numbers that
+ * sit next to item names are usually quantities or pack sizes ("120", "92OZ").
+ * Requiring a decimal point is what stops "HUGGIES DIAPERS 120" being read as a
+ * $120 item. Values immediately followed by "%" are rates, not amounts.
+ */
+function decimalMoney(line: string): number[] {
+  const out: number[] = [];
+  const re = /\d[\d,]*(?:\.\d{1,2})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    const after = line.slice(m.index + m[0].length);
+    if (/^\s*%/.test(after)) continue;
+    const v = toNumber(m[0]);
+    if (!Number.isNaN(v)) out.push(v);
+  }
+  return out;
 }
 
-function cleanName(line: string): string {
+function lastMoney(line: string): number | null {
+  const vals = decimalMoney(line);
+  return vals.length ? vals[vals.length - 1] : null;
+}
+
+/** Strips prices, quantities and stray symbols to leave a readable item name. */
+function itemName(line: string): string {
   return line
-    .replace(/(-?\$?\s?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})|-?\$?\s?\d+[.,]\d{2}|\d+)\s*[A-Z]?\s*$/, '')
-    .replace(/[.·•*_\-]{2,}\s*$/, '')
+    .replace(/\d[\d,]*(?:\.\d{1,2})/g, ' ')
+    .replace(/\b\d+\s*[xX@*]\s*/g, ' ')
+    .replace(/[%$€£₹¥]/g, ' ')
+    .replace(/^[#*.\-•\s]+/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function quantityFrom(line: string): number {
+  const m = line.match(/(\d{1,3})\s*[xX@*]\s*\d/);
+  return m ? parseInt(m[1], 10) || 1 : 1;
 }
 
 const MONTHS = [
@@ -147,68 +177,113 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
         /[A-Za-z]{3,}/.test(l) &&
         !/\d{1,2}[:/]\d{1,2}/.test(l) &&
         !/receipt|invoice|tax|tel|phone/i.test(l) &&
+        !ADDRESS_LIKE.test(l) &&
         l.trim().length <= 40,
     ) || lines[0] || 'Unknown merchant';
   const merchant = merchantLine.trim().replace(/\s{2,}/g, ' ');
 
   // ---- totals ----
-  const findAmount = (re: RegExp): number | undefined => {
+  const amountOnSummaryLine = (re: RegExp): number | undefined => {
     for (let i = lines.length - 1; i >= 0; i--) {
       if (re.test(lines[i])) {
-        const v = trailingPrice(lines[i]);
+        const v = lastMoney(lines[i]);
         if (v !== null && v > 0) return v;
       }
     }
     return undefined;
   };
 
-  const subtotal = findAmount(/\bsub\s*-?\s*total\b|\bsubtotal\b/i);
-  const tax = findAmount(/\b(tax|vat|gst|hst|sales\s+tax)\b/i);
-  let total = findAmount(/\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total)\b/i) ?? 0;
+  const subtotal = amountOnSummaryLine(/\bsub\s*-?\s*total\b|\bsubtotal\b/i);
+  const tax = amountOnSummaryLine(/\b(tax|vat|gst|hst|sales\s+tax)\b/i);
+  const printedTotal = amountOnSummaryLine(
+    /\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total)\b/i,
+  );
 
   // ---- items ----
   const items: ReceiptItem[] = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length < 3) continue;
-    if (NON_ITEM.test(trimmed)) continue;
-    if (/\d{1,2}[:/]\d{1,2}/.test(trimmed) && !/[A-Za-z]{3,}/.test(trimmed)) continue;
-
-    const price = trailingPrice(trimmed);
-    if (price === null || price <= 0) continue;
-
-    let qty = 1;
-    // "2 x 3.50", "2 @ 3.50", "2 * 3.50"
-    const qtyMatch = trimmed.match(/^\s*(\d{1,3})\s*[xX@*]\s*\$?\s*\d/);
-    if (qtyMatch) {
-      qty = parseInt(qtyMatch[1], 10) || 1;
-    }
-
-    let name = cleanName(trimmed)
-      .replace(/^\d{1,3}\s*[xX@*]\s*/, '')
-      .replace(/^[#*.\-•]+\s*/, '')
-      .trim();
-    if (!name || name.length < 2 || !/[A-Za-z]/.test(name)) continue;
-
-    // Guard: skip obvious addresses / phone lines
-    if (/^\d+\s+\w+\s+(st|street|ave|avenue|rd|road|blvd|suite|ste)\b/i.test(name)) continue;
-
+  const pushItem = (name: string, price: number, source: string) => {
+    if (!name || name.length < 2 || !/[A-Za-z]/.test(name)) return;
     items.push({
       id: uid(),
       name,
-      price: Math.round(price * 100) / 100,
-      qty,
+      price: round2(price),
+      qty: quantityFrom(source),
       category: guessCategory(name),
     });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.length < 2) continue;
+    if (NON_ITEM.test(line)) continue;
+    if (ADDRESS_LIKE.test(line)) continue;
+
+    const nameHere = itemName(line);
+    const priceHere = lastMoney(line);
+
+    // (a) Name and price on the same line.
+    if (priceHere !== null && priceHere > 0 && nameHere.length >= 2 && /[A-Za-z]/.test(nameHere)) {
+      pushItem(nameHere, priceHere, line);
+      continue;
+    }
+
+    // (b) Name on this line, price on the next — the common layout on thermal
+    // receipts, where the item name is followed by "1 @ 3.49   3.49".
+    if (priceHere === null && /[A-Za-z]{3,}/.test(line)) {
+      const next = (lines[i + 1] ?? '').trim();
+      const nextPrice = next ? lastMoney(next) : null;
+      const nextIsPriceOnly =
+        nextPrice !== null &&
+        nextPrice > 0 &&
+        !/[A-Za-z]{3,}/.test(next.replace(/[xX@*]/g, ''));
+      if (nextIsPriceOnly && nextPrice !== null) {
+        pushItem(nameHere, nextPrice, next);
+        i++; // consume the price line
+      }
+    }
   }
 
   // ---- reconcile total ----
-  const itemsSum = Math.round(items.reduce((s, it) => s + it.price, 0) * 100) / 100;
-  if (total <= 0) {
-    total = subtotal !== undefined ? subtotal + (tax ?? 0) : itemsSum;
-    if (items.length && total > 0) warnings.push('Total was inferred from line items.');
+  const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
+  const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
+
+  let total: number;
+  if (printedTotal !== undefined && printedTotal > 0) {
+    total = printedTotal;
+    // A printed total that disagrees with subtotal + tax almost always means a
+    // digit was misread (e.g. "81.41" -> "41"). Trust the printed subtotal and
+    // tax, which are short, unambiguous numbers, and flag the correction.
+    if (expected !== undefined && Math.abs(printedTotal - expected) > Math.max(1, expected * 0.05)) {
+      warnings.push(
+        `Printed total ${printedTotal.toFixed(2)} did not match subtotal + tax ` +
+          `(${expected.toFixed(2)}); used ${expected.toFixed(2)}. Please double-check.`,
+      );
+      total = expected;
+    }
+  } else if (expected !== undefined) {
+    total = expected;
+    warnings.push('No total found on the receipt; calculated it from subtotal and tax.');
+  } else {
+    total = itemsSum;
+    if (items.length) warnings.push('No total found on the receipt; summed the line items instead.');
   }
-  if (items.length === 0) warnings.push('No line items detected — add them manually.');
+
+  if (items.length === 0) {
+    warnings.push('No line items were detected — add them manually.');
+  } else {
+    // Compare the items against whichever printed figure is most trustworthy.
+    // A large gap means OCR merged or dropped digits on the item lines.
+    const reference = subtotal ?? (printedTotal !== undefined ? printedTotal : undefined);
+    if (reference !== undefined && reference > 0) {
+      const gap = Math.abs(itemsSum - reference);
+      if (gap > Math.max(1, reference * 0.15)) {
+        warnings.push(
+          'The line items do not add up to the receipt total — some prices were probably ' +
+            'misread. Please check each item against the photo.',
+        );
+      }
+    }
+  }
 
   return {
     merchant,
@@ -217,7 +292,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     items,
     subtotal,
     tax,
-    total: Math.round(total * 100) / 100,
+    total: round2(total),
     rawText,
     warnings,
   };

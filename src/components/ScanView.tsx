@@ -46,20 +46,28 @@ export function ScanView({
       setProgress(0);
       setStatusText('Preparing…');
       try {
-        const [text, thumb] = await Promise.all([
+        const [ocr, thumb] = await Promise.all([
           recognizeImage(file, (status, p) => {
             setStatusText(status);
             setProgress(Math.round(p * 100));
           }),
           makeThumbnail(file).catch(() => undefined),
         ]);
+        const text = ocr.text;
 
         if (!text || text.trim().length < 8) {
           throw new Error('No readable text was found in that image. Try a clearer, well-lit photo.');
         }
 
         const parsed = parseReceiptText(text);
-        setWarnings(parsed.warnings);
+        const notes = [...parsed.warnings];
+        if (ocr.confidence > 0 && ocr.confidence < 70) {
+          notes.unshift(
+            `The photo was hard to read (confidence ${Math.round(ocr.confidence)}%). ` +
+              'Please check the amounts against the receipt.',
+          );
+        }
+        setWarnings(notes);
         setPreview(thumb ?? null);
         setDraft({
           id: uid(),
