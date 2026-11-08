@@ -40,6 +40,8 @@ export interface Receipt {
   subtotal?: number;
   tax?: number;
   total: number;
+  /** Amount the receipt reports as saved (informational only). */
+  savings?: number;
   imageThumb?: string;
   rawText?: string;
   notes?: string;
@@ -51,6 +53,10 @@ export interface Settings {
   llmBaseUrl: string;
   llmApiKey: string;
   llmModel: string;
+  /** Use a vision model to read receipts instead of on-device OCR. */
+  aiReading: boolean;
+  /** Vision model used for AI reading (e.g. a multimodal OpenRouter model). */
+  visionModel: string;
   theme: 'light' | 'dark';
 }
 
@@ -59,6 +65,8 @@ export const DEFAULT_SETTINGS: Settings = {
   llmBaseUrl: '',
   llmApiKey: '',
   llmModel: 'gpt-4o-mini',
+  aiReading: false,
+  visionModel: 'openai/gpt-4o-mini',
   theme: 'light',
 };
 

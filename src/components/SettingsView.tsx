@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Bot, Database, Download, Moon, Save, Sun, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, Database, Download, Moon, Save, Sparkles, Sun, Upload } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 
@@ -71,12 +71,75 @@ export function SettingsView({
 
       <div className="card card-pad">
         <h3 className="section-title">
+          <Sparkles size={16} /> AI reading
+        </h3>
+        <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
+          Send the receipt photo to a vision model for a much more accurate read. Uses the endpoint and
+          key below. When this is off, reading happens on your device with OCR.
+        </p>
+        <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={draft.aiReading}
+            onChange={(e) => patch({ aiReading: e.target.checked })}
+          />
+          <span>Read receipts with AI</span>
+        </label>
+        <div className="field" style={{ marginTop: 14 }}>
+          <label>Vision model</label>
+          <input
+            className="input"
+            placeholder="openai/gpt-4o-mini"
+            value={draft.visionModel}
+            onChange={(e) => patch({ visionModel: e.target.value })}
+          />
+          <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'openai/gpt-4o-mini' })}>
+              GPT-4o mini
+            </button>
+            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'openai/gpt-4o' })}>
+              GPT-4o
+            </button>
+            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'google/gemini-3.8-flash' })}>
+              Gemini Flash
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => patch({ visionModel: 'anthropic/claude-sonnet-5.5' })}
+            >
+              Claude Sonnet
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card card-pad">
+        <h3 className="section-title">
           <Bot size={16} /> Assistant (optional LLM)
         </h3>
         <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
           The assistant works offline for common questions. Add an OpenAI-compatible endpoint to answer
           free-form questions. The key is stored only in this browser and sent directly to your endpoint.
         </p>
+        <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-sm"
+            onClick={() =>
+              patch({
+                llmBaseUrl: 'https://openrouter.ai/api/v1',
+                llmModel: draft.llmModel || 'openai/gpt-4o-mini',
+              })
+            }
+          >
+            Use OpenRouter
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => patch({ llmBaseUrl: 'https://api.openai.com/v1', llmModel: 'gpt-4o-mini' })}
+          >
+            Use OpenAI
+          </button>
+        </div>
         <div className="grid" style={{ gap: 14 }}>
           <div className="field">
             <label>Base URL</label>

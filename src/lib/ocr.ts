@@ -33,11 +33,12 @@ async function getWorker(onProgress?: OcrProgress): Promise<Worker> {
  * source of bad reads: low resolution, grey paper and uneven lighting cause
  * Tesseract to drop or merge digits (e.g. reading "81.41" as "41").
  *
- * Upscaling to a consistent working width, flattening to greyscale and
- * stretching contrast recovered the correct total in testing where the raw
- * image did not.
+ * Two variants are produced — a contrast-stretched greyscale image and an
+ * Otsu-binarised one — because which wins depends on the photo (shadowed shots
+ * favour the binarised version, low-contrast ones favour greyscale). Both are
+ * recognised and the parse that reconciles best is kept.
  */
-async function preprocess(source: Blob): Promise<Blob | string> {
+async function preprocess(source: Blob, mode: 'gray' | 'binary'): Promise<Blob | string> {
   try {
     const bitmap = await loadBitmap(source);
     const srcW = bitmap.width;
@@ -99,9 +100,42 @@ async function preprocess(source: Blob): Promise<Blob | string> {
       }
     }
     const range = Math.max(1, hi - lo);
+
+    // Otsu's threshold, computed on the stretched histogram.
+    let threshold = 128;
+    if (mode === 'binary') {
+      const h2 = new Uint32Array(256);
+      for (let p = 0; p < gray.length; p++) {
+        const v = Math.min(255, Math.max(0, Math.round(((gray[p] - lo) / range) * 255)));
+        h2[v]++;
+      }
+      let sumAll = 0;
+      for (let v = 0; v < 256; v++) sumAll += v * h2[v];
+      let sumB = 0;
+      let wB = 0;
+      let best = 0;
+      let bestVar = -1;
+      for (let v = 0; v < 256; v++) {
+        wB += h2[v];
+        if (!wB) continue;
+        const wF = total - wB;
+        if (!wF) break;
+        sumB += v * h2[v];
+        const mB = sumB / wB;
+        const mF = (sumAll - sumB) / wF;
+        const between = wB * wF * (mB - mF) * (mB - mF);
+        if (between > bestVar) {
+          bestVar = between;
+          best = v;
+        }
+      }
+      threshold = best;
+    }
+
     for (let i = 0, p = 0; i < d.length; i += 4, p++) {
       let v = ((gray[p] - lo) / range) * 255;
       v = v < 0 ? 0 : v > 255 ? 255 : v;
+      if (mode === 'binary') v = v >= threshold ? 255 : 0;
       d[i] = d[i + 1] = d[i + 2] = v;
       d[i + 3] = 255;
     }
@@ -118,9 +152,34 @@ async function preprocess(source: Blob): Promise<Blob | string> {
  */
 export async function recognizeImage(image: Blob, onProgress?: OcrProgress): Promise<OcrResult> {
   const worker = await getWorker(onProgress);
-  const prepared = await preprocess(image);
+  const prepared = await preprocess(image, 'gray');
   const { data } = await worker.recognize(prepared);
   return { text: data.text, confidence: data.confidence ?? 0 };
+}
+
+/**
+ * Recognises the same image with both preprocessing variants and returns every
+ * result, so the caller can pick the parse that reconciles best. Slower than
+ * `recognizeImage` but noticeably more accurate on difficult photos.
+ */
+export async function recognizeImageVariants(
+  image: Blob,
+  onProgress?: OcrProgress,
+): Promise<OcrResult[]> {
+  const worker = await getWorker(onProgress);
+  const results: OcrResult[] = [];
+  for (const mode of ['gray', 'binary'] as const) {
+    try {
+      const prepared = await preprocess(image, mode);
+      const { data } = await worker.recognize(prepared);
+      const text = data.text ?? '';
+      if (text.trim().length >= 8) results.push({ text, confidence: data.confidence ?? 0 });
+    } catch {
+      /* try the next variant */
+    }
+  }
+  if (!results.length) throw new Error('No readable text was found in that image.');
+  return results;
 }
 
 /** Downscales an image to a data URL thumbnail to keep IndexedDB small. */
@@ -137,7 +196,7 @@ export async function makeThumbnail(source: Blob, maxSize = 720, quality = 0.7):
   return canvas.toDataURL('image/jpeg', quality);
 }
 
-async function loadBitmap(source: Blob): Promise<ImageBitmap | HTMLImageElement> {
+export async function loadBitmap(source: Blob): Promise<ImageBitmap | HTMLImageElement> {
   if ('createImageBitmap' in window) {
     try {
       return await createImageBitmap(source);

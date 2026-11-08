@@ -1,30 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Sun } from 'lucide-react';
+import { BarChart3, Brain, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Sun } from 'lucide-react';
 import { DEFAULT_SETTINGS, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
+  clearLearning,
   deleteReceipt,
   exportJSON,
   getAllReceipts,
   importJSON,
+  loadLearning,
   loadSettings,
   putReceipt,
+  saveLearning,
   saveSettings,
 } from './lib/db';
+import { EMPTY_LEARNING, learnFromSave, type LearningData } from './lib/learning';
+import type { ParsedReceipt } from './lib/parser';
 import { download, receiptsToCSV } from './lib/utils';
 import { Dashboard } from './components/Dashboard';
 import { ScanView } from './components/ScanView';
 import { ReceiptsView } from './components/ReceiptsView';
 import { Assistant } from './components/Assistant';
+import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
 
-type Tab = 'dashboard' | 'scan' | 'receipts' | 'assistant' | 'settings';
+type Tab = 'dashboard' | 'scan' | 'receipts' | 'assistant' | 'learning' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: typeof ScanLine }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { id: 'scan', label: 'Scan', icon: ScanLine },
   { id: 'receipts', label: 'Receipts', icon: ReceiptText },
   { id: 'assistant', label: 'Assistant', icon: Sparkles },
+  { id: 'learning', label: 'Learning', icon: Brain },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -32,6 +39,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [learning, setLearning] = useState<LearningData>(EMPTY_LEARNING);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -40,9 +48,10 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [r, s] = await Promise.all([getAllReceipts(), loadSettings()]);
+      const [r, s, l] = await Promise.all([getAllReceipts(), loadSettings(), loadLearning()]);
       setReceipts(r);
       setSettings(s);
+      setLearning(l);
       setLoading(false);
     })();
   }, []);
@@ -52,12 +61,17 @@ export default function App() {
   }, [settings.theme]);
 
   const saveReceipt = useCallback(
-    async (receipt: Receipt) => {
+    async (receipt: Receipt, original?: ParsedReceipt) => {
       await putReceipt(receipt);
+      if (original) {
+        const next = learnFromSave(original, receipt, learning);
+        await saveLearning(next);
+        setLearning(next);
+      }
       await refresh();
       setTab('receipts');
     },
-    [refresh],
+    [refresh, learning],
   );
 
   const removeReceipt = useCallback(
@@ -71,6 +85,23 @@ export default function App() {
   const persistSettings = useCallback(async (next: Settings) => {
     await saveSettings(next);
     setSettings(next);
+  }, []);
+
+  const handleImportLearning = useCallback(async (json: string) => {
+    const data = JSON.parse(json) as LearningData;
+    if (!data || !Array.isArray(data.items)) throw new Error('That file is not a learning export.');
+    const merged: LearningData = {
+      ...EMPTY_LEARNING,
+      ...data,
+      version: 1,
+    };
+    await saveLearning(merged);
+    setLearning(merged);
+  }, []);
+
+  const handleClearLearning = useCallback(async () => {
+    await clearLearning();
+    setLearning(EMPTY_LEARNING);
   }, []);
 
   const handleImport = useCallback(
@@ -141,7 +172,9 @@ export default function App() {
 
       <main className="main">
         {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
-        {tab === 'scan' && <ScanView currency={settings.currency} onSave={saveReceipt} />}
+        {tab === 'scan' && (
+          <ScanView currency={settings.currency} settings={settings} learning={learning} onSave={saveReceipt} />
+        )}
         {tab === 'receipts' && (
           <ReceiptsView
             receipts={receipts}
@@ -151,6 +184,13 @@ export default function App() {
           />
         )}
         {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} />}
+        {tab === 'learning' && (
+          <LearningView
+            data={learning}
+            onImport={handleImportLearning}
+            onClear={handleClearLearning}
+          />
+        )}
         {tab === 'settings' && (
           <SettingsView
             settings={settings}

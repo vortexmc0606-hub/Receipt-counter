@@ -1,5 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { DEFAULT_SETTINGS, type Receipt, type Settings } from '../types';
+import { EMPTY_LEARNING, type LearningData } from './learning';
+import { ENV_DEFAULTS } from './env';
 
 interface ReceiptDB extends DBSchema {
   receipts: {
@@ -11,18 +13,27 @@ interface ReceiptDB extends DBSchema {
     key: string;
     value: unknown;
   };
+  learning: {
+    key: string;
+    value: unknown;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<ReceiptDB>> | null = null;
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReceiptDB>('receipt-scanner', 1, {
-      upgrade(db) {
-        const store = db.createObjectStore('receipts', { keyPath: 'id' });
-        store.createIndex('by-date', 'date');
-        store.createIndex('by-created', 'createdAt');
-        db.createObjectStore('settings');
+    dbPromise = openDB<ReceiptDB>('receipt-scanner', 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const store = db.createObjectStore('receipts', { keyPath: 'id' });
+          store.createIndex('by-date', 'date');
+          store.createIndex('by-created', 'createdAt');
+          db.createObjectStore('settings');
+        }
+        if (oldVersion < 2 && !db.objectStoreNames.contains('learning')) {
+          db.createObjectStore('learning');
+        }
       },
     });
   }
@@ -53,12 +64,32 @@ export async function clearAllReceipts(): Promise<void> {
 export async function loadSettings(): Promise<Settings> {
   const db = await getDB();
   const stored = (await db.get('settings', 'app')) as Partial<Settings> | undefined;
-  return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+  const env = Object.fromEntries(
+    Object.entries(ENV_DEFAULTS).filter(([, v]) => v !== undefined),
+  ) as Partial<Settings>;
+  // Order: defaults, then env prefill, then whatever the user saved.
+  return { ...DEFAULT_SETTINGS, ...env, ...(stored ?? {}) };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
   const db = await getDB();
   await db.put('settings', settings, 'app');
+}
+
+export async function loadLearning(): Promise<LearningData> {
+  const db = await getDB();
+  const stored = (await db.get('learning', 'app')) as Partial<LearningData> | undefined;
+  return { ...EMPTY_LEARNING, ...(stored ?? {}) };
+}
+
+export async function saveLearning(data: LearningData): Promise<void> {
+  const db = await getDB();
+  await db.put('learning', data, 'app');
+}
+
+export async function clearLearning(): Promise<void> {
+  const db = await getDB();
+  await db.put('learning', EMPTY_LEARNING, 'app');
 }
 
 export async function exportJSON(): Promise<string> {

@@ -22,6 +22,16 @@ export function guessCategory(name: string): Category {
 const NON_ITEM =
   /^(sub\s*-?\s*total|subtotal|total|amount\s*due|balance|change|cash|credit|debit|visa|mastercard|amex|card|payment|tax|vat|gst|hst|tip|gratuity|discount|coupon|savings|tendered|auth|approval|invoice|receipt|order|table|server|cashier|thank|welcome|store|tel|phone|www\.|http|date|time|item\s+qty|qty\s+price|transaction|terminal|ref\b|#\d+)/i;
 
+/**
+ * Savings/discount summaries. These carry an amount that looks exactly like a
+ * price, so they are the most common thing wrongly captured as a line item
+ * ("YOU SAVED 12.35", "TOTAL SAVINGS 12.35", "MEMBER SAVINGS"). The amount is
+ * already reflected in the item prices, so counting it again would overstate
+ * spending.
+ */
+const SAVINGS_LINE =
+  /\b(you\s+saved|total\s+savings?|member\s+savings?|savings?|saved|discounts?|coupons?|store\s+savings?|bonus\s+savings?|loyalty|rewards?)\b/i;
+
 const ADDRESS_LIKE =
   /^\s*\d+\s+\w+(\s+\w+)*\s+(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|suite|ste)\b/i;
 
@@ -72,6 +82,45 @@ function decimalMoney(line: string): number[] {
 function lastMoney(line: string): number | null {
   const vals = decimalMoney(line);
   return vals.length ? vals[vals.length - 1] : null;
+}
+
+/**
+ * Tesseract frequently confuses digits that share strokes — 8↔6, 0↔8, 5↔6,
+ * 1↔7. When a printed figure disagrees with the value it must equal (a printed
+ * total vs. subtotal + tax, or the sum of the line items), look for a single
+ * misread digit that reconciles them, so "61.41" can be repaired to "81.41".
+ */
+const DIGIT_CONFUSIONS: Record<string, string> = {
+  '0': '869',
+  '1': '74',
+  '2': '7',
+  '3': '89',
+  '4': '91',
+  '5': '6',
+  '6': '850',
+  '7': '12',
+  '8': '603',
+  '9': '438',
+};
+
+function repairMisreadAmount(printed: number, targets: number[]): number | null {
+  const valid = targets.filter((t) => Number.isFinite(t) && t > 0);
+  if (!valid.length) return null;
+  const s = printed.toFixed(2);
+  const variants = new Set<string>();
+  for (let i = 0; i < s.length; i++) {
+    const alts = DIGIT_CONFUSIONS[s[i]];
+    if (!alts) continue;
+    for (const a of alts) variants.add(s.slice(0, i) + a + s.slice(i + 1));
+  }
+  for (const v of variants) {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) continue;
+    for (const t of valid) {
+      if (Math.abs(n - t) <= 0.02) return t;
+    }
+  }
+  return null;
 }
 
 /** Strips prices, quantities and stray symbols to leave a readable item name. */
@@ -148,8 +197,16 @@ export interface ParsedReceipt {
   subtotal?: number;
   tax?: number;
   total: number;
+  /** Amount the receipt reports as saved, if any. Never added to items or total. */
+  savings?: number;
   rawText: string;
   warnings: string[];
+  /**
+   * How internally consistent the parse is (higher is better). Used to choose
+   * between OCR passes; it rewards a total that reconciles with the subtotal,
+   * tax and line items without any digit repair.
+   */
+  quality: number;
 }
 
 export function parseReceiptText(rawText: string): ParsedReceipt {
@@ -165,6 +222,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     date = parseDate(l);
     if (date) break;
   }
+  const dateFound = date !== null;
   if (!date) {
     date = new Date().toISOString().slice(0, 10);
     warnings.push('No date found on the receipt; defaulted to today.');
@@ -199,6 +257,18 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     /\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total)\b/i,
   );
 
+  // Savings are reported, not spent — shown to the user but never counted.
+  let savings: number | undefined;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (SAVINGS_LINE.test(lines[i])) {
+      const v = lastMoney(lines[i]);
+      if (v !== null && v > 0) {
+        savings = v;
+        break;
+      }
+    }
+  }
+
   // ---- items ----
   const items: ReceiptItem[] = [];
   const pushItem = (name: string, price: number, source: string) => {
@@ -216,6 +286,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     const line = lines[i].trim();
     if (line.length < 2) continue;
     if (NON_ITEM.test(line)) continue;
+    if (SAVINGS_LINE.test(line)) continue;
     if (ADDRESS_LIKE.test(line)) continue;
 
     const nameHere = itemName(line);
@@ -246,19 +317,45 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   // ---- reconcile total ----
   const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
   const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
+  const agrees = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.5, b * 0.02);
 
   let total: number;
+  let repaired = false;
   if (printedTotal !== undefined && printedTotal > 0) {
-    total = printedTotal;
-    // A printed total that disagrees with subtotal + tax almost always means a
-    // digit was misread (e.g. "81.41" -> "41"). Trust the printed subtotal and
-    // tax, which are short, unambiguous numbers, and flag the correction.
-    if (expected !== undefined && Math.abs(printedTotal - expected) > Math.max(1, expected * 0.05)) {
-      warnings.push(
-        `Printed total ${printedTotal.toFixed(2)} did not match subtotal + tax ` +
-          `(${expected.toFixed(2)}); used ${expected.toFixed(2)}. Please double-check.`,
-      );
-      total = expected;
+    // Cross-check the printed total against every independent figure we trust:
+    // subtotal + tax, the subtotal itself, and the sum of the line items.
+    const targets = [expected, subtotal, itemsSum > 0 ? itemsSum : undefined].filter(
+      (v): v is number => v !== undefined && v > 0,
+    );
+    const agree = targets.find((t) => agrees(printedTotal, t));
+
+    if (agree !== undefined) {
+      total = printedTotal;
+    } else {
+      // A printed total that matches nothing almost always means a digit was
+      // misread. Try to repair a single digit ("61.41" -> "81.41").
+      const fixed = repairMisreadAmount(printedTotal, targets);
+      if (fixed !== null) {
+        warnings.push(
+          `The total looked like ${printedTotal.toFixed(2)} but the other figures point to ` +
+            `${fixed.toFixed(2)}; used ${fixed.toFixed(2)}. Please double-check.`,
+        );
+        total = fixed;
+        repaired = true;
+      } else if (expected !== undefined) {
+        warnings.push(
+          `Printed total ${printedTotal.toFixed(2)} did not match subtotal + tax ` +
+            `(${expected.toFixed(2)}); used ${expected.toFixed(2)}. Please double-check.`,
+        );
+        total = expected;
+        repaired = true;
+      } else {
+        warnings.push(
+          `The printed total (${printedTotal.toFixed(2)}) did not match the line items ` +
+            `(${itemsSum.toFixed(2)}). Please check both against the photo.`,
+        );
+        total = printedTotal;
+      }
     }
   } else if (expected !== undefined) {
     total = expected;
@@ -267,6 +364,22 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     total = itemsSum;
     if (items.length) warnings.push('No total found on the receipt; summed the line items instead.');
   }
+
+  // ---- quality score (higher is better) ----
+  let quality = 0;
+  if (printedTotal !== undefined && !repaired) quality += 2;
+  if (expected !== undefined && agrees(total, expected)) quality += 2;
+  if (itemsSum > 0 && (subtotal !== undefined || printedTotal !== undefined)) {
+    const ref = subtotal ?? printedTotal ?? 0;
+    if (ref > 0) {
+      const gap = Math.abs(itemsSum - ref);
+      quality += gap <= Math.max(0.5, ref * 0.02) ? 3 : gap <= Math.max(1, ref * 0.1) ? 1 : 0;
+    }
+  }
+  quality += Math.min(3, items.length / 3);
+  if (dateFound) quality += 1;
+  if (!repaired) quality += 1;
+  quality -= warnings.length * 0.5;
 
   if (items.length === 0) {
     warnings.push('No line items were detected — add them manually.');
@@ -293,8 +406,10 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     subtotal,
     tax,
     total: round2(total),
+    savings,
     rawText,
     warnings,
+    quality: Math.round(quality * 100) / 100,
   };
 }
 
@@ -308,6 +423,7 @@ export function parsedToReceipt(p: ParsedReceipt, fallbackCurrency: string): Rec
     subtotal: p.subtotal,
     tax: p.tax,
     total: p.total,
+    savings: p.savings,
     rawText: p.rawText,
     createdAt: Date.now(),
   };

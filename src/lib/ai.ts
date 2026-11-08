@@ -1,0 +1,271 @@
+import type { Category, ReceiptItem, Settings } from '../types';
+import { CATEGORIES } from '../types';
+import { loadBitmap } from './ocr';
+import { guessCategory } from './parser';
+
+/**
+ * Reads a receipt with a vision-capable LLM instead of on-device OCR.
+ *
+ * This sends the receipt image to the endpoint configured in Settings, so it is
+ * opt-in: the on-device OCR path stays the default and the fallback. The API key
+ * is held only in this browser's IndexedDB and is never bundled or committed.
+ */
+
+export interface AiReadResult {
+  merchant: string;
+  date: string;
+  currency: string | null;
+  items: ReceiptItem[];
+  subtotal?: number;
+  tax?: number;
+  total: number;
+  savings?: number;
+  rawText: string;
+  warnings: string[];
+}
+
+function uid(): string {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+function chatUrl(base: string): string {
+  const b = base.trim().replace(/\/$/, '');
+  return b.endsWith('/chat/completions') ? b : `${b}/chat/completions`;
+}
+
+/** Downscales to a JPEG data URL so the request body stays a reasonable size. */
+async function toDataUrl(source: Blob, maxEdge = 1400, quality = 0.85): Promise<string> {
+  const bitmap = await loadBitmap(source);
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not prepare the image for AI reading.');
+  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function coerceNumber(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const cleaned = v.replace(/[^0-9.,-]/g, '').replace(/,/g, '');
+    const n = parseFloat(cleaned);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function normalizeDate(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const dmy = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  if (dmy) {
+    const a = +dmy[1];
+    const b = +dmy[2];
+    let y = +dmy[3];
+    if (y < 100) y += y > 70 ? 1900 : 2000;
+    const [mo, d] = a > 12 ? [b, a] : [a, b];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
+function asCategory(v: unknown, name: string): Category {
+  if (typeof v === 'string') {
+    const hit = CATEGORIES.find((c) => c.toLowerCase() === v.toLowerCase());
+    if (hit) return hit;
+  }
+  return guessCategory(name);
+}
+
+const PROMPT = `You are an expert receipt parser. Read the attached receipt image and return ONLY JSON.
+
+Extract, in this order:
+1. "total": the printed TOTAL / AMOUNT DUE / BALANCE line (the final amount paid).
+2. "subtotal": the printed SUBTOTAL line value.
+3. "tax": the printed TAX / VAT / GST line value.
+4. "savings": the printed "YOU SAVED" / "TOTAL SAVINGS" / member savings value, or null.
+5. "items": every purchased line, each with its line total (the amount charged for that line). If a line shows "2 @ 8.99  17.98", the line total is 17.98 and qty is 2.
+
+Never put subtotal, tax, total, savings, change, card/payment lines, or the store address/header into "items".
+
+Return exactly this JSON shape:
+{
+  "merchant": string,
+  "date": "yyyy-mm-dd" | null,
+  "currency": string | null,
+  "items": [{ "name": string, "qty": number, "price": number, "category": string }],
+  "subtotal": number | null,
+  "tax": number | null,
+  "total": number | null,
+  "savings": number | null
+}
+If a value is unreadable, use null rather than guessing.
+Allowed category values: ${CATEGORIES.join(', ')}.`;
+
+/** Extracts the first balanced JSON object from a model response. */
+function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1] : text;
+  const start = body.indexOf('{');
+  if (start === -1) throw new Error('The AI did not return usable JSON.');
+  const end = body.lastIndexOf('}');
+  if (end > start) {
+    try {
+      return JSON.parse(body.slice(start, end + 1));
+    } catch {
+      /* fall through and try to salvage a truncated response */
+    }
+  }
+  // A response cut off by the token limit leaves unbalanced brackets. Close
+  // them in reverse order so the partial result can still be used.
+  const stack: string[] = [];
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i];
+    if (esc) {
+      esc = false;
+      continue;
+    }
+    if (ch === '\\') {
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      continue;
+    }
+    if (inStr) continue;
+    if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let candidate = body.slice(start).replace(/,\s*$/, '');
+  if (inStr) candidate += '"';
+  while (stack.length) {
+    candidate += stack.pop() === '{' ? '}' : ']';
+  }
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    throw new Error('The AI returned malformed JSON. Try again or use a different vision model.');
+  }
+}
+
+export async function readReceiptWithAI(file: Blob, settings: Settings): Promise<AiReadResult> {
+  if (!settings.llmBaseUrl.trim()) {
+    throw new Error('Add an API base URL in Settings before using AI reading.');
+  }
+  const model = settings.visionModel.trim() || settings.llmModel.trim();
+  if (!model) throw new Error('Set a vision model in Settings before using AI reading.');
+
+  const dataUrl = await toDataUrl(file);
+
+  const res = await fetch(chatUrl(settings.llmBaseUrl), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      // Bounded so a long receipt can't blow past the account's credit limit;
+      // 2000 tokens comfortably fits a 40-line receipt as JSON.
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PROMPT },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`AI reading failed (${res.status}). ${body.slice(0, 240)}`);
+  }
+
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  };
+  if (json.error?.message) throw new Error(`AI reading failed: ${json.error.message}`);
+  const content = json.choices?.[0]?.message?.content;
+  if (!content) throw new Error('The AI returned an empty response.');
+
+  const parsed = extractJson(content) as Record<string, unknown>;
+  const warnings: string[] = [];
+
+  const items: ReceiptItem[] = [];
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+  for (const raw of rawItems) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    const price = coerceNumber(r.price);
+    if (!name || price === undefined || price <= 0) continue;
+    items.push({
+      id: uid(),
+      name,
+      price: round2(price),
+      qty: Math.max(1, Math.round(coerceNumber(r.qty) ?? 1)),
+      category: asCategory(r.category, name),
+    });
+  }
+
+  const subtotal = coerceNumber(parsed.subtotal) ?? undefined;
+  const tax = coerceNumber(parsed.tax) ?? undefined;
+  const savings = coerceNumber(parsed.savings) ?? undefined;
+  const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
+
+  let total = coerceNumber(parsed.total) ?? 0;
+  const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
+  if (total <= 0) {
+    total = expected ?? itemsSum;
+    if (total > 0) warnings.push('No total on the receipt; calculated it from the other figures.');
+  } else if (expected !== undefined && Math.abs(total - expected) > Math.max(1, expected * 0.05)) {
+    warnings.push(
+      `The printed total (${total.toFixed(2)}) did not match subtotal + tax (${expected.toFixed(2)}).`,
+    );
+  }
+
+  if (items.length === 0) {
+    warnings.push('The AI found no line items — add them manually.');
+  } else {
+    const reference = subtotal ?? (total > 0 ? total : undefined);
+    if (reference !== undefined && Math.abs(itemsSum - reference) > Math.max(1, reference * 0.15)) {
+      warnings.push('The line items do not add up to the receipt total — please check them.');
+    }
+  }
+
+  const date = normalizeDate(parsed.date) ?? new Date().toISOString().slice(0, 10);
+  if (!normalizeDate(parsed.date)) warnings.push('No date found on the receipt; defaulted to today.');
+
+  return {
+    merchant: typeof parsed.merchant === 'string' && parsed.merchant.trim() ? parsed.merchant.trim() : 'Unknown merchant',
+    date,
+    currency: typeof parsed.currency === 'string' ? parsed.currency : null,
+    items,
+    subtotal,
+    tax,
+    total: round2(total),
+    savings,
+    rawText: content,
+    warnings,
+  };
+}

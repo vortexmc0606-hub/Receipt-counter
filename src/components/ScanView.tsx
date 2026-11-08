@@ -11,20 +11,40 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { CATEGORIES, type Category, type Receipt, type ReceiptItem } from '../types';
-import { makeThumbnail, recognizeImage } from '../lib/ocr';
-import { parseReceiptText, uid } from '../lib/parser';
+import { CATEGORIES, type Category, type Receipt, type ReceiptItem, type Settings } from '../types';
+import { makeThumbnail, recognizeImageVariants } from '../lib/ocr';
+import { readReceiptWithAI } from '../lib/ai';
+import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
+import { applyLearning, type LearningData } from '../lib/learning';
 import { money, todayISO } from '../lib/utils';
 import { Modal } from './ui';
 
 type Stage = 'idle' | 'ocr' | 'review';
 
+interface ReadOutcome {
+  merchant: string;
+  date: string;
+  currency: string | null;
+  items: ReceiptItem[];
+  subtotal?: number;
+  tax?: number;
+  total: number;
+  savings?: number;
+  rawText: string;
+  warnings: string[];
+  quality: number;
+}
+
 export function ScanView({
   currency,
+  settings,
+  learning,
   onSave,
 }: {
   currency: string;
-  onSave: (r: Receipt) => Promise<void>;
+  settings: Settings;
+  learning: LearningData;
+  onSave: (r: Receipt, original?: ParsedReceipt) => Promise<void>;
 }) {
   const [stage, setStage] = useState<Stage>('idle');
   const [dragover, setDragover] = useState(false);
@@ -35,6 +55,7 @@ export function ScanView({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const originalRef = useRef<ParsedReceipt | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
@@ -45,40 +66,76 @@ export function ScanView({
       setStage('ocr');
       setProgress(0);
       setStatusText('Preparing…');
+      const notes: string[] = [];
       try {
-        const [ocr, thumb] = await Promise.all([
-          recognizeImage(file, (status, p) => {
+        const thumb = await makeThumbnail(file).catch(() => undefined);
+        setPreview(thumb ?? null);
+
+        let outcome: ReadOutcome | null = null;
+
+        // Preferred path: a vision model, when the user has enabled it.
+        if (settings.aiReading && settings.llmBaseUrl.trim()) {
+          setStatusText('Reading with AI…');
+          setProgress(35);
+          try {
+            const ai = await readReceiptWithAI(file, settings);
+            outcome = { ...ai, quality: 0 };
+            notes.push(...ai.warnings);
+            notes.push('Read by AI — check the amounts against the photo.');
+          } catch (aiErr) {
+            notes.push(
+              `AI reading failed (${aiErr instanceof Error ? aiErr.message : 'unknown error'}). ` +
+                'Fell back to on-device reading.',
+            );
+          }
+        }
+
+        // Fallback (and default): on-device Tesseract OCR.
+        if (!outcome) {
+          setStatusText('Reading on your device…');
+          const variants = await recognizeImageVariants(file, (status, p) => {
             setStatusText(status);
             setProgress(Math.round(p * 100));
-          }),
-          makeThumbnail(file).catch(() => undefined),
-        ]);
-        const text = ocr.text;
-
-        if (!text || text.trim().length < 8) {
-          throw new Error('No readable text was found in that image. Try a clearer, well-lit photo.');
+          });
+          const parses = variants.map((v) => ({ ocr: v, parsed: parseReceiptText(v.text) }));
+          // Keep the parse that reconciles best (total vs. subtotal/tax/items).
+          parses.sort((a, b) => b.parsed.quality - a.parsed.quality);
+          const best = parses[0];
+          if (!best || best.ocr.text.trim().length < 8) {
+            throw new Error('No readable text was found in that image. Try a clearer, well-lit photo.');
+          }
+          outcome = best.parsed;
+          if (best.ocr.confidence > 0 && best.ocr.confidence < 70) {
+            notes.unshift(
+              `The photo was hard to read (confidence ${Math.round(best.ocr.confidence)}%). ` +
+                'Please check the amounts against the receipt.',
+            );
+          }
+          notes.push(...best.parsed.warnings);
         }
 
-        const parsed = parseReceiptText(text);
-        const notes = [...parsed.warnings];
-        if (ocr.confidence > 0 && ocr.confidence < 70) {
-          notes.unshift(
-            `The photo was hard to read (confidence ${Math.round(ocr.confidence)}%). ` +
-              'Please check the amounts against the receipt.',
-          );
+        // Replay everything learned from previous corrections.
+        const raw = outcome as ParsedReceipt;
+        const learned = applyLearning(raw, learning);
+        outcome = learned.result;
+        // Diff against the raw reader output when learning from the final save.
+        originalRef.current = raw;
+        if (learned.applied.length) {
+          notes.push(...learned.applied.map((a) => `Applied from your corrections: ${a}`));
         }
+
         setWarnings(notes);
-        setPreview(thumb ?? null);
         setDraft({
           id: uid(),
-          merchant: parsed.merchant,
-          date: parsed.date,
-          currency: parsed.currency || currency,
-          items: parsed.items,
-          subtotal: parsed.subtotal,
-          tax: parsed.tax,
-          total: parsed.total,
-          rawText: parsed.rawText,
+          merchant: outcome.merchant,
+          date: outcome.date,
+          currency: outcome.currency || currency,
+          items: outcome.items,
+          subtotal: outcome.subtotal,
+          tax: outcome.tax,
+          total: outcome.total,
+          savings: outcome.savings,
+          rawText: outcome.rawText,
           imageThumb: thumb,
           createdAt: Date.now(),
         });
@@ -88,7 +145,7 @@ export function ScanView({
         setStage('idle');
       }
     },
-    [currency],
+    [currency, settings, learning],
   );
 
   const onFiles = useCallback(
@@ -134,8 +191,9 @@ export function ScanView({
         total: Number(draft.total) || itemsSum,
         subtotal: draft.subtotal !== undefined ? Number(draft.subtotal) : undefined,
         tax: draft.tax !== undefined ? Number(draft.tax) : undefined,
+        savings: draft.savings !== undefined ? Number(draft.savings) : undefined,
       };
-      await onSave(clean);
+      await onSave(clean, originalRef.current ?? undefined);
       reset();
     } finally {
       setSaving(false);
@@ -149,6 +207,7 @@ export function ScanView({
     setStage('idle');
     setProgress(0);
     setError(null);
+    originalRef.current = null;
     if (fileInput.current) fileInput.current.value = '';
     if (cameraInput.current) cameraInput.current.value = '';
   };
@@ -328,6 +387,19 @@ export function ScanView({
                     step="0.01"
                     value={draft.total}
                     onChange={(e) => updateDraft({ total: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label>Saved (optional)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    placeholder="—"
+                    value={draft.savings ?? ''}
+                    onChange={(e) =>
+                      updateDraft({ savings: e.target.value === '' ? undefined : Number(e.target.value) })
+                    }
                   />
                 </div>
               </div>
