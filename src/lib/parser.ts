@@ -206,7 +206,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   const header = lines.slice(0, Math.max(3, Math.ceil(lines.length * 0.25)));
   const merchantLine =
     header.find((l) => recognizeStore(l).known) ||
-    header.find((l) => /[A-Za-z]{3,}/.test(l) && !/\\d{1,2}[:/]\\d{1,2}/.test(l) &&
+    header.find((l) => /[A-Za-z]{3,}/.test(l) && !/\d{1,2}[:/]\d{1,2}/.test(l) &&
       !/receipt|invoice|tax|tel|phone|thank you|welcome/i.test(l) &&
       !ADDRESS_LIKE.test(l) && l.trim().length <= 48) ||
     lines.find((l) => /[A-Za-z]{3,}/.test(l) && !ADDRESS_LIKE.test(l)) ||
