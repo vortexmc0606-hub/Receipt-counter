@@ -20,14 +20,44 @@ function base(settings: Settings): string {
 }
 
 async function req<T>(settings: Settings, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base(settings)}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-  });
+  // A stalled or dead backend must not block the scan: without a timeout the
+  // request would hang and the on-device OCR fallback would never run. 20s is
+  // generous for a vision read and short enough to fail over promptly.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  let res: Response;
+  try {
+    res = await fetch(`${base(settings)}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    });
+  } catch (err) {
+    throw new Error(
+      err instanceof DOMException && err.name === 'AbortError'
+        ? 'The server took too long to respond.'
+        : 'Could not reach the server.',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
   const text = await res.text();
-  const json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  // Gateways answer with an HTML error page, not JSON; don't let a parse error
+  // hide the real HTTP status.
+  let json: Record<string, unknown> = {};
+  try {
+    json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    /* non-JSON body (proxy/HTML error page) */
+  }
   if (!res.ok) {
-    const message = typeof json.error === 'string' ? json.error : `Request failed (${res.status}).`;
+    const message =
+      typeof json.error === 'string'
+        ? json.error
+        : res.status === 502 || res.status === 504
+          ? 'The server is unavailable right now.'
+          : `Request failed (${res.status}).`;
     throw new Error(message);
   }
   return json as T;
