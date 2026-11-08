@@ -15,8 +15,10 @@ export interface EnhanceOptions {
 }
 
 const DEFAULTS: Required<EnhanceOptions> = {
-  // A hard pixel cap keeps large phone photos from freezing mobile browsers.
-  maxEdge: 1500,
+  // Hard pixel cap: big enough to keep small digits legible (measured best
+  // around 2000–2400px on the long edge) while still finishing quickly on a
+  // phone. Receipt digits stop improving above ~2400px.
+  maxEdge: 2000,
   deskew: true,
   crop: true,
   shadow: true,

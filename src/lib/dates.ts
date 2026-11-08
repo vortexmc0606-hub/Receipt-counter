@@ -121,13 +121,23 @@ export function parseReceiptDate(text: string, today = todayISO()): ParsedDate |
   }
   if (candidates.length === 0) return null;
 
-  const notFuture = (c: ParsedDate) => c.iso <= today;
-  return (
-    candidates.find((c) => c.labelled && notFuture(c)) ??
-    candidates.find(notFuture) ??
-    candidates.find((c) => c.labelled) ??
-    candidates[0]
-  );
+  // A receipt is a recent document. A date years in the past is almost always a
+  // misread number (a phone number, SKU or price that happened to look like a
+  // date); a date well in the future is a misread year. Score each candidate and
+  // take the best, so a stray false positive cannot beat the real date.
+  const todayYear = +today.slice(0, 4);
+  const score = (c: ParsedDate): number => {
+    let s = c.labelled ? 4 : 0;
+    if (c.iso <= today) s += 3;
+    const year = +c.iso.slice(0, 4);
+    const age = todayYear - year;
+    if (age < 0) s -= 6; // future
+    else if (age <= 1) s += 3; // this year or last
+    else if (age <= 3) s += 1;
+    else s -= 4; // implausibly old for a receipt
+    return s;
+  };
+  return candidates.reduce((best, c) => (score(c) > score(best) ? c : best));
 }
 
 /**

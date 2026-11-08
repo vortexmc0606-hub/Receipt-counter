@@ -70,3 +70,21 @@ test('smart tax only fills a gap and never overrides a printed amount', () => {
   assert.equal(out2.tax, 0.89);
   assert.equal(applied2.length, 1);
 });
+
+// Cases drawn from real Walmart receipts (Training/*.HEIC) that OCR actually
+// mis-parsed: the amount printed before its label, and a card total that looked
+// like a product line.
+test('an amount printed before "TOTAL PURCHASE" is the total, not an item', () => {
+  const p = parseReceiptText(
+    'Walmart\nSupercenter\n# ITEMS SOLD 2\nMASTERCARD 3133 1 4 APPR#016662\n247.65 TOTAL PURCHASE\n11/06/26 16:28:53',
+  );
+  assert.equal(p.total, 247.65);
+  assert.ok(!p.items.some((i) => /purchase/i.test(i.name)), JSON.stringify(p.items));
+});
+
+test('a standalone "Amount:" line is a summary, not an item', () => {
+  const p = parseReceiptText('STORE\nMETHI LEAVES 0.09\nAmount: 81.41');
+  assert.ok(!p.items.some((i) => /amount/i.test(i.name)), JSON.stringify(p.items));
+  assert.equal(p.total, 81.41);
+});
+

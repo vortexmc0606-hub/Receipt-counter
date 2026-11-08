@@ -143,12 +143,15 @@ export async function* recognizeReceiptPasses(
   const seen = new Set<string>();
   let produced = 0;
 
+  // Each preprocessing variant is computed once, lazily, on first use: the
+  // pixel work is far more expensive than a recognition pass and is independent
+  // of the segmentation mode.
   for (const prep of ['illum', 'gray'] as const) {
+    const blob = await preprocess(image, prep);
     for (const { name, psm } of PASSES) {
       try {
-        const prepared = await preprocess(image, prep);
         await worker.setParameters({ tessedit_pageseg_mode: psm });
-        const { data } = await worker.recognize(prepared);
+        const { data } = await worker.recognize(blob);
         const text = data.text ?? '';
         if (text.trim().length < 8) continue;
         if (seen.has(text)) continue;

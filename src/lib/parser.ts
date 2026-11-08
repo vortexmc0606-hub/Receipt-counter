@@ -41,6 +41,26 @@ const NON_ITEM =
   /^(sub\s*-?\s*total|subtotal|total|amount\s*due|balance|change|cash|credit|debit|visa|mastercard|amex|card|payment|tax|vat|gst|hst|tip|gratuity|discount|coupon|savings|tendered|auth|approval|invoice|receipt|order|table|server|cashier|thank|welcome|store|tel|phone|www\.|http|date|time|item\s+qty|qty\s+price|transaction|terminal|ref\b|#\d+)/i;
 
 /**
+ * Summary labels that can appear anywhere on a line, not only at the start.
+ * Thermal receipts frequently print the amount first — "247.65 TOTAL PURCHASE",
+ * "Amount: 81.41" — so an anchored match lets the whole line be misread as a
+ * purchased item and double-count the total.
+ */
+const SUMMARY_ANYWHERE =
+  /\b(grand\s+total|total\s+(purchase|sale|sales|due|amount|paid|items?|savings|tax|balance)|sub\s*-?total|amount\s+(due|paid|tendered)|balance\s+due|net\s+total|amount\s*:)/i;
+
+/**
+ * A leading-digit OCR slip ("TOTAL" read as "OTAL"). Used only to reject
+ * candidate item lines that are otherwise unreadable — never to read amounts —
+ * so a summary line misread this way cannot become a bogus product.
+ */
+const TOTAL_FUZZY = /\b(otal|ub\s*-?total|mount\s+due|alance\s+due)\b/i;
+
+/** A line whose printed value is the receipt total. */
+const TOTAL_LINE =
+  /\b(grand\s+total|total\s+(purchase|sale|sales|due|amount|paid|balance)|amount\s+due|balance\s+due|net\s+total|amount\s*:|total\b(?!\s*(savings?|saved|tax|items?|qty|count|discount|units)))/i;
+
+/**
  * Savings/discount summaries. These carry an amount that looks exactly like a
  * price, so they are the most common thing wrongly captured as a line item
  * ("YOU SAVED 12.35", "TOTAL SAVINGS 12.35", "MEMBER SAVINGS"). The amount is
@@ -249,9 +269,9 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
 
   const subtotal = amountOnSummaryLine(/\bsub\s*-?\s*total\b|\bsubtotal\b/i);
   const printedTax = amountOnSummaryLine(/\b(tax|vat|gst|hst|sales\s+tax)\b/i);
-  const printedTotal = amountOnSummaryLine(
-    /\b(grand\s+total|total\s+due|amount\s+due|balance\s+due|total)\b/i,
-  );
+  // "TOTAL PURCHASE", "AMOUNT DUE", "BALANCE DUE", and a bare "TOTAL" all mark
+  // the final amount. Some receipts print the amount before the label.
+  const printedTotal = amountOnSummaryLine(TOTAL_LINE);
 
   // Tax is often printed as a rate ("SALES TAX 8.25%") rather than an amount.
   // When only a rate is printed, the amount is computed from the base
@@ -274,7 +294,10 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
   // ---- items ----
   const items: ReceiptItem[] = [];
   const pushItem = (name: string, price: number, source: string) => {
-    if (!name || name.length < 2 || !/[A-Za-z]/.test(name)) return;
+    // Require at least two consecutive letters: a "name" that is only digits or
+    // stray symbols ("TAK1", "AK", "(Each)") is an OCR fragment, not a product.
+    if (!name || name.length < 2 || !/[A-Za-z]{2,}/.test(name)) return;
+    if (TOTAL_FUZZY.test(name)) return;
     items.push({
       id: uid(),
       name,
@@ -289,6 +312,7 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     const line = lines[i].trim();
     if (line.length < 2) continue;
     if (NON_ITEM.test(line)) continue;
+    if (SUMMARY_ANYWHERE.test(line)) continue;
     if (TAX_SUMMARY.test(line)) continue;
     if (PAYMENT_LINE.test(line)) continue;
     if (SAVINGS_LINE.test(line)) continue;
