@@ -17,3 +17,6 @@ server/data
 
 # Training assets (large binary; keep the extracted JSON instead)
 Training.zip
+
+# Tesseract language data downloaded when running tesseract.js from Node
+*.traineddata
