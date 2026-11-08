@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { AlertTriangle, Bot, Database, Download, Moon, Save, Sparkles, Sun, Upload } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
+import { HAS_SHARED_KEY } from '../lib/env';
 
 export function SettingsView({
   settings,
@@ -118,9 +119,16 @@ export function SettingsView({
           <Bot size={16} /> Assistant (optional LLM)
         </h3>
         <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
-          The assistant works offline for common questions. Add an OpenAI-compatible endpoint to answer
-          free-form questions. The key is stored only in this browser and sent directly to your endpoint.
+          {HAS_SHARED_KEY
+            ? 'This app is set up with a shared connection, so scanning works out of the box. No key is needed.'
+            : 'The assistant works offline for common questions. Add an OpenAI-compatible endpoint to answer free-form questions. The key is stored only in this browser and sent directly to your endpoint.'}
         </p>
+        {HAS_SHARED_KEY ? (
+          <div className="alert alert-info" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={16} /> Using the app's shared connection. Nothing to configure.
+          </div>
+        ) : (
+          <>
         <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <button
             className="btn btn-sm"
@@ -170,6 +178,8 @@ export function SettingsView({
             />
           </div>
         </div>
+          </>
+        )}
       </div>
 
       <div className="card card-pad">

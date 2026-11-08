@@ -34,6 +34,13 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: "true"
+          # Shared key baked in at build time so every visitor uses one key.
+          # Supplied from repository secrets, never committed.
+          VITE_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          VITE_LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          VITE_LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          VITE_VISION_MODEL: ${{ secrets.VISION_MODEL }}
+          VITE_AI_READING: "true"
 
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html

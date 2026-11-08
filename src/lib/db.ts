@@ -67,8 +67,10 @@ export async function loadSettings(): Promise<Settings> {
   const env = Object.fromEntries(
     Object.entries(ENV_DEFAULTS).filter(([, v]) => v !== undefined),
   ) as Partial<Settings>;
-  // Order: defaults, then env prefill, then whatever the user saved.
-  return { ...DEFAULT_SETTINGS, ...env, ...(stored ?? {}) };
+  // Order: defaults, then whatever the user saved, then the build-time values.
+  // The build-time values win so a shared key can never be shadowed by a stale
+  // value left in this browser.
+  return { ...DEFAULT_SETTINGS, ...(stored ?? {}), ...env };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
