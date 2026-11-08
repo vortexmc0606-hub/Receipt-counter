@@ -1,5 +1,5 @@
 import type { Category } from '../types';
-import { recognizeStore, type StoreKind } from './stores';
+import { kindCategoryPriors, recognizeStore } from './stores';
 
 /**
  * A weighted, explainable item classifier.
@@ -79,26 +79,9 @@ const AUTO_EXCLUDE = /\b(motor\s+oil|engine\s+oil|5w-?30|10w-?30|0w-?20|antifree
 function storePriors(store?: string): Partial<Record<Category, number>> {
   const s = (store || '').toLowerCase();
   const kind = s ? recognizeStore(store || '').kind : 'Other';
-  const byKind: Partial<Record<StoreKind, Partial<Record<Category, number>>>> = {
-    Grocery: { Groceries: 2, Household: 1.5, Health: 1 },
-    Superstore: { Groceries: 1.5, Household: 1.5, Clothing: 1, Electronics: 1, Health: 1 },
-    Wholesale: { Groceries: 1.5, Household: 2, Electronics: 1, Health: 1 },
-    Convenience: { Groceries: 1, Household: 1, Dining: 1 },
-    Pharmacy: { Health: 3, Household: 1.5, Groceries: 1 },
-    Restaurant: { Dining: 5 },
-    'Fast Food': { Dining: 5 },
-    Coffee: { Dining: 4 },
-    Bakery: { Dining: 4 },
-    'Ice Cream': { Dining: 4 },
-    Fuel: { Transport: 3, Groceries: 1 },
-    Electronics: { Electronics: 3 },
-    'Home Improvement': { Household: 2, Electronics: 1 },
-    Clothing: { Clothing: 3 },
-    Department: { Clothing: 1.5, Household: 1, Electronics: 1 },
-    Entertainment: { Entertainment: 3, Dining: 1 },
-    Online: { Other: 0 },
+  const priors: Partial<Record<Category, number>> = {
+    ...(kindCategoryPriors(kind) ?? {}),
   };
-  const priors: Partial<Record<Category, number>> = { ...(byKind[kind] ?? {}) };
 
   // Belt-and-braces name hints for stores not in the catalog.
   if (/grocer|market|bazaar|supermarket|foods?|mart|costco|walmart|kroger|safeway|aldi|lidl|trader|whole foods|publix|sprouts|h-?e-?b|albertsons|wegmans|target/.test(s)) {

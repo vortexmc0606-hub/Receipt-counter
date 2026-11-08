@@ -257,11 +257,16 @@ export async function ask(
   question: string,
   dataContext: string,
   history: ChatMessage[] = [],
+  memory: string[] = [],
 ): Promise<string> {
+  const memoryBlock = memory.length
+    ? ['', 'THINGS THE USER ASKED YOU TO REMEMBER:', ...memory.map((m) => `- ${m}`)]
+    : [];
   const system = [
     'You are a helpful personal-finance assistant embedded in a receipt-scanner app.',
     'Answer only from the receipt data provided. Be concise and concrete.',
     'If the user asks for a list or comparison, respond with a short sentence followed by a markdown table.',
+    ...memoryBlock,
     '',
     'RECEIPT DATA:',
     dataContext,

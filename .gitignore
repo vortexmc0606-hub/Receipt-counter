@@ -14,3 +14,6 @@ dist-ssr
 
 # Backend runtime data (receipts)
 server/data
+
+# Training assets (large binary; keep the extracted JSON instead)
+Training.zip

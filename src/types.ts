@@ -104,3 +104,10 @@ export interface ChatMessage {
   sources?: string[];
   createdAt: number;
 }
+
+/** A durable fact the assistant has been told to remember. */
+export interface MemoryFact {
+  id: string;
+  text: string;
+  createdAt: number;
+}

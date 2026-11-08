@@ -2,6 +2,7 @@ import type { Category, Receipt, ReceiptItem } from '../types';
 import { categorize } from './category';
 import { recognizeStore } from './stores';
 import { extractTaxRate, hasTaxLabel, resolveTax } from './tax';
+import { parseReceiptDate, todayISO } from './dates';
 
 export function guessCategory(name: string): Category {
   return categorize(name);
@@ -156,47 +157,6 @@ function quantityFrom(line: string): number {
   return m ? parseInt(m[1], 10) || 1 : 1;
 }
 
-const MONTHS = [
-  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
-];
-
-function parseDate(text: string): string | null {
-  const iso = (y: number, mo: number, d: number) => {
-    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-    const yy = y < 100 ? (y > 70 ? 1900 + y : 2000 + y) : y;
-    return `${yy.toString().padStart(4, '0')}-${mo.toString().padStart(2, '0')}-${d
-      .toString()
-      .padStart(2, '0')}`;
-  };
-
-  // 2024-03-05 / 2024.03.05
-  let m = text.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (m) return iso(+m[1], +m[2], +m[3]);
-
-  // 05/03/2024 or 03/05/24 (assume day-first when first part > 12, else month-first)
-  m = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
-  if (m) {
-    const a = +m[1];
-    const b = +m[2];
-    if (a > 12 && b <= 12) return iso(+m[3], b, a);
-    return iso(+m[3], a, b);
-  }
-
-  // 05 Mar 2024 / Mar 05, 2024 / 05-MAR-24
-  m = text.match(/\b(\d{1,2})[\s-]*([A-Za-z]{3,9})[\s,-]*(\d{2,4})\b/);
-  if (m) {
-    const mo = MONTHS.indexOf(m[2].slice(0, 3).toLowerCase()) + 1;
-    if (mo) return iso(+m[3], mo, +m[1]);
-  }
-  m = text.match(/\b([A-Za-z]{3,9})[\s-]*(\d{1,2})[\s,-]*(\d{2,4})\b/);
-  if (m) {
-    const mo = MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) + 1;
-    if (mo) return iso(+m[3], mo, +m[2]);
-  }
-  return null;
-}
-
 function detectCurrency(text: string): string | null {
   if (/\bEUR\b|€/.test(text)) return '€';
   if (/\bGBP\b|£/.test(text)) return '£';
@@ -236,16 +196,10 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     .filter((l) => l.trim().length > 0);
 
   // ---- date ----
-  let date: string | null = null;
-  for (const l of lines) {
-    date = parseDate(l);
-    if (date) break;
-  }
-  const dateFound = date !== null;
-  if (!date) {
-    date = new Date().toISOString().slice(0, 10);
-    warnings.push('No date found on the receipt; defaulted to today.');
-  }
+  const found = parseReceiptDate(rawText);
+  const dateFound = found !== null;
+  const date = found?.iso ?? todayISO();
+  if (!found) warnings.push('No date found on the receipt; defaulted to today.');
 
   // ---- merchant: first line that looks like a name ----
   const merchantLine =

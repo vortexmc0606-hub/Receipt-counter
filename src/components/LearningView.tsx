@@ -4,6 +4,7 @@ import {
   learningSummary,
   type LearningData,
 } from '../lib/learning';
+import { todayISO } from '../lib/dates';
 import { download } from '../lib/utils';
 
 /**
@@ -32,7 +33,7 @@ export function LearningView({
 
   const exportLearning = () => {
     download(
-      `receipt-learning-${new Date().toISOString().slice(0, 10)}.json`,
+      `receipt-learning-${todayISO()}.json`,
       JSON.stringify(data, null, 2),
       'application/json',
     );

@@ -1,3 +1,6 @@
+import type { Category } from '../types';
+import { TRAINING_STORE_CATALOG } from './store-catalog.generated';
+
 /**
  * Store and brand recognition.
  *
@@ -29,6 +32,9 @@ export type StoreKind =
   | 'Clothing'
   | 'Department'
   | 'Entertainment'
+  | 'Automotive'
+  | 'Pet'
+  | 'Market'
   | 'Online'
   | 'Other';
 
@@ -40,7 +46,7 @@ export interface StoreDef {
   aliases?: string[];
 }
 
-export const STORE_CATALOG: StoreDef[] = [
+const BUILTIN_STORE_CATALOG: StoreDef[] = [
   // ---------- Grocery ----------
   { name: "Kroger", kind: 'Grocery', aliases: ['kroger', 'kroger co', 'kroger plus'] },
   { name: 'Safeway', kind: 'Grocery', aliases: ['safeway', 'safeway inc'] },
@@ -309,8 +315,8 @@ export const STORE_CATALOG: StoreDef[] = [
   { name: 'Bed Bath & Beyond', kind: 'Department', aliases: ['bed bath and beyond', 'bed bath beyond'] },
   { name: 'Michaels', kind: 'Entertainment', aliases: ['michaels', 'michaels stores'] },
   { name: 'Hobby Lobby', kind: 'Entertainment', aliases: ['hobby lobby'] },
-  { name: 'PetSmart', kind: 'Other', aliases: ['petsmart'] },
-  { name: 'Petco', kind: 'Other', aliases: ['petco'] },
+  { name: 'PetSmart', kind: 'Pet', aliases: ['petsmart'] },
+  { name: 'Petco', kind: 'Pet', aliases: ['petco'] },
   { name: 'Bath & Body Works', kind: 'Clothing', aliases: ['bath and body works', 'bath body works'] },
   { name: 'Old Navy', kind: 'Clothing', aliases: ['old navy'] },
   { name: 'Gap', kind: 'Clothing', aliases: ['gap', 'gapkids', 'gap factory'] },
@@ -365,6 +371,13 @@ export const STORE_CATALOG: StoreDef[] = [
   { name: 'Bowlero', kind: 'Entertainment', aliases: ['bowlero'] },
   { name: 'Chuck E. Cheese', kind: 'Entertainment', aliases: ['chuck e cheese', 'chuck e cheese s'] },
 ];
+
+/**
+ * The full catalog: the hand-maintained chains plus the stores generated from
+ * the training spec. Built-in entries come first so a curated kind wins over a
+ * generated one for the same store; `buildIndex` de-duplicates by name.
+ */
+export const STORE_CATALOG: StoreDef[] = [...BUILTIN_STORE_CATALOG, ...TRAINING_STORE_CATALOG];
 
 /** Item names that reveal a restaurant even when the header is unreadable. */
 const FOOD_ITEM_RE =
@@ -482,3 +495,35 @@ export function storeKind(name: string): StoreKind {
   }
   return 'Other';
 }
+
+/**
+ * Categories a store kind nudges item classification toward, or `undefined`
+ * when the kind adds no signal. Used to keep a store's items out of the wrong
+ * bucket (a pharmacy receipt is not groceries).
+ */
+export function kindCategoryPriors(kind: StoreKind): Partial<Record<Category, number>> | undefined {
+  return KIND_CATEGORY_PRIORS[kind];
+}
+
+const KIND_CATEGORY_PRIORS: Partial<Record<StoreKind, Partial<Record<Category, number>>>> = {
+  Grocery: { Groceries: 2, Household: 1.5, Health: 1 },
+  Superstore: { Groceries: 1.5, Household: 1.5, Clothing: 1, Electronics: 1, Health: 1 },
+  Wholesale: { Groceries: 1.5, Household: 2, Electronics: 1, Health: 1 },
+  Convenience: { Groceries: 1, Household: 1, Dining: 1 },
+  Pharmacy: { Health: 3, Household: 1.5, Groceries: 1 },
+  Restaurant: { Dining: 5 },
+  'Fast Food': { Dining: 5 },
+  Coffee: { Dining: 4 },
+  Bakery: { Dining: 4 },
+  'Ice Cream': { Dining: 4 },
+  Fuel: { Transport: 3, Groceries: 1 },
+  Electronics: { Electronics: 3 },
+  'Home Improvement': { Household: 2, Electronics: 1 },
+  Clothing: { Clothing: 3 },
+  Department: { Clothing: 1.5, Household: 1, Electronics: 1 },
+  Entertainment: { Entertainment: 3, Dining: 1 },
+  Automotive: { Transport: 3 },
+  Pet: { Household: 1.5 },
+  Market: { Groceries: 2, Household: 1.5 },
+  Online: { Other: 0 },
+};

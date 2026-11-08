@@ -1,13 +1,11 @@
 import type { Category, Receipt } from '../types';
 
+export { todayISO } from './dates';
+
 export function money(value: number, currency = '$'): string {
   const n = Number.isFinite(value) ? value : 0;
   const sign = n < 0 ? '-' : '';
   return `${sign}${currency}${Math.abs(n).toFixed(2)}`;
-}
-
-export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 export function prettyDate(iso: string): string {

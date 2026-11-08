@@ -1,6 +1,6 @@
 import type { AiReadResult } from './ai';
 import { loadBitmap } from './ocr';
-import type { ChatMessage, Receipt, Settings } from '../types';
+import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
 
 /**
  * Client for the Receipt Scanner backend.
@@ -75,6 +75,7 @@ export async function askBackend(
   receipts: Receipt[],
   settings: Settings,
   history: ChatMessage[] = [],
+  memory: MemoryFact[] = [],
 ): Promise<string> {
   const res = await req<{ content: string }>(settings, '/api/assistant', {
     method: 'POST',
@@ -83,6 +84,7 @@ export async function askBackend(
       receipts,
       currency: settings.currency,
       history: history.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+      memory: memory.map((f) => f.text),
     }),
   });
   return res.content;

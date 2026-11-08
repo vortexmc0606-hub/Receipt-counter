@@ -1,4 +1,4 @@
-import type { ChatMessage, Receipt, Settings } from '../types';
+import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
 import {
   categoryTotals,
   merchantTotals,
@@ -9,6 +9,8 @@ import {
   receiptTotal,
 } from './utils';
 import { uid } from './parser';
+import { addDays, endOfMonth, todayISO } from './dates';
+import { formatMemory } from './memory';
 
 export interface AssistantAnswer {
   content: string;
@@ -108,46 +110,33 @@ function parseExplicitDate(q: string): string | null {
 
 function rangeFromQuery(q: string, receipts: Receipt[]): { label: string; from: string; to: string } | null {
   const lower = q.toLowerCase();
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const today = todayISO();
 
   if (/\b(today)\b/.test(lower)) return { label: 'today', from: today, to: today };
   if (/\b(yesterday)\b/.test(lower)) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 1);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = addDays(today, -1);
     return { label: 'yesterday', from: iso, to: iso };
   }
   if (/\b(this\s+week)\b/.test(lower)) {
-    const d = new Date(now);
-    const day = d.getDay();
-    const start = new Date(d);
-    start.setDate(d.getDate() - day);
-    return { label: 'this week', from: start.toISOString().slice(0, 10), to: today };
+    const [y, m, d] = today.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay();
+    return { label: 'this week', from: addDays(today, -dow), to: today };
   }
   if (/\b(last\s+month)\b/.test(lower)) {
-    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), 0);
-    return {
-      label: 'last month',
-      from: d.toISOString().slice(0, 10),
-      to: end.toISOString().slice(0, 10),
-    };
+    const firstOfThis = `${today.slice(0, 7)}-01`;
+    return { label: 'last month', from: addDays(firstOfThis, -1).slice(0, 7) + '-01', to: addDays(firstOfThis, -1) };
   }
   if (/\b(this\s+month)\b/.test(lower)) {
-    const d = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { label: 'this month', from: d.toISOString().slice(0, 10), to: today };
+    return { label: 'this month', from: `${today.slice(0, 7)}-01`, to: today };
   }
   if (/\b(this\s+year)\b/.test(lower)) {
-    return { label: 'this year', from: `${now.getFullYear()}-01-01`, to: today };
+    return { label: 'this year', from: `${today.slice(0, 4)}-01-01`, to: today };
   }
 
   const mk = matchMonth(q, receipts);
   if (mk) {
-    const [y, m] = mk.split('-').map(Number);
     const from = `${mk}-01`;
-    const to = new Date(y, m, 0).toISOString().slice(0, 10);
-    return { label: monthLabel(mk), from, to };
+    return { label: monthLabel(mk), from, to: endOfMonth(from) };
   }
 
   const explicit = parseExplicitDate(q);
@@ -327,14 +316,19 @@ export async function askLLM(
   receipts: Receipt[],
   settings: Settings,
   history: ChatMessage[] = [],
+  memory: MemoryFact[] = [],
 ): Promise<AssistantAnswer> {
   const base = settings.llmBaseUrl.replace(/\/$/, '');
   const url = base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
+  const memoryBlock = memory.length
+    ? ['', 'THINGS THE USER ASKED YOU TO REMEMBER:', formatMemory(memory)]
+    : [];
   const system = [
     'You are a helpful personal-finance assistant embedded in a receipt-scanner app.',
     'Answer only from the receipt data provided. Be concise and concrete.',
     `Currency symbol: ${settings.currency}.`,
     'If the user asks for a list or comparison, respond with a short sentence followed by a markdown table.',
+    ...memoryBlock,
     '',
     'RECEIPT DATA:',
     dataContext(receipts, settings.currency),

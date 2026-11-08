@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, Brain, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
-import { DEFAULT_SETTINGS, type Receipt, type Settings } from './types';
+import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
   clearLearning,
@@ -9,13 +9,16 @@ import {
   getAllReceipts,
   importJSON,
   loadLearning,
+  loadMemory,
   loadSettings,
   putReceipt,
   saveLearning,
+  saveMemory,
   saveSettings,
 } from './lib/db';
 import { EMPTY_LEARNING, learnFromSave, type LearningData } from './lib/learning';
 import type { ParsedReceipt } from './lib/parser';
+import { todayISO } from './lib/dates';
 import { download, receiptsToCSV } from './lib/utils';
 import { Dashboard } from './components/Dashboard';
 import { ScanView } from './components/ScanView';
@@ -50,6 +53,7 @@ export default function App() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [learning, setLearning] = useState<LearningData>(EMPTY_LEARNING);
+  const [memory, setMemory] = useState<MemoryFact[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -58,10 +62,16 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [r, s, l] = await Promise.all([getAllReceipts(), loadSettings(), loadLearning()]);
+      const [r, s, l, m] = await Promise.all([
+        getAllReceipts(),
+        loadSettings(),
+        loadLearning(),
+        loadMemory(),
+      ]);
       setReceipts(r);
       setSettings(s);
       setLearning(l);
+      setMemory(m);
       setLoading(false);
       // When backend sync is on, pull anything the server has that this device
       // does not, so receipts show up across devices.
@@ -131,6 +141,11 @@ export default function App() {
     setLearning(merged);
   }, []);
 
+  const updateMemory = useCallback(async (facts: MemoryFact[]) => {
+    setMemory(facts);
+    await saveMemory(facts);
+  }, []);
+
   const handleClearLearning = useCallback(async () => {
     await clearLearning();
     setLearning(EMPTY_LEARNING);
@@ -150,7 +165,7 @@ export default function App() {
   }, [refresh]);
 
   const handleExportCSV = useCallback(() => {
-    download(`receipts-${new Date().toISOString().slice(0, 10)}.csv`, receiptsToCSV(receipts, settings.currency), 'text/csv');
+    download(`receipts-${todayISO()}.csv`, receiptsToCSV(receipts, settings.currency), 'text/csv');
   }, [receipts, settings.currency]);
 
   const totalCount = useMemo(() => receipts.length, [receipts]);
@@ -215,7 +230,9 @@ export default function App() {
             onExportCSV={handleExportCSV}
           />
         )}
-        {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} />}
+        {tab === 'assistant' && (
+          <Assistant receipts={receipts} settings={settings} memory={memory} onMemoryChange={updateMemory} />
+        )}
         {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
         {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
         {tab === 'learning' && (
@@ -229,7 +246,7 @@ export default function App() {
           <SettingsView
             settings={settings}
             onSave={persistSettings}
-            onExport={async () => download(`receipts-backup-${new Date().toISOString().slice(0, 10)}.json`, await exportJSON())}
+            onExport={async () => download(`receipts-backup-${todayISO()}.json`, await exportJSON())}
             onImport={handleImport}
             onClearAll={handleClearAll}
           />

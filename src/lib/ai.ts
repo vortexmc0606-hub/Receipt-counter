@@ -4,6 +4,7 @@ import { loadBitmap } from './ocr';
 import { categorize } from './category';
 import { recognizeStore } from './stores';
 import { resolveTax } from './tax';
+import { normalizeISODate, todayISO } from './dates';
 
 /**
  * Reads a receipt with a vision-capable LLM instead of on-device OCR.
@@ -64,24 +65,6 @@ function coerceNumber(v: unknown): number | undefined {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
-}
-
-function normalizeDate(v: unknown): string | null {
-  if (typeof v !== 'string') return null;
-  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  const dmy = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
-  if (dmy) {
-    const a = +dmy[1];
-    const b = +dmy[2];
-    let y = +dmy[3];
-    if (y < 100) y += y > 70 ? 1900 : 2000;
-    const [mo, d] = a > 12 ? [b, a] : [a, b];
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-  }
-  return null;
 }
 
 function asCategory(v: unknown, name: string, store?: string): Category {
@@ -285,8 +268,8 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
     }
   }
 
-  const date = normalizeDate(parsed.date) ?? new Date().toISOString().slice(0, 10);
-  if (!normalizeDate(parsed.date)) warnings.push('No date found on the receipt; defaulted to today.');
+  const date = normalizeISODate(parsed.date) ?? todayISO();
+  if (!normalizeISODate(parsed.date)) warnings.push('No date found on the receipt; defaulted to today.');
 
   return {
     merchant,

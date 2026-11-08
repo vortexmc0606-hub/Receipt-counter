@@ -108,11 +108,12 @@ export function createApp() {
   app.post(
     '/api/assistant',
     ah(async (req, res) => {
-      const { question, receipts: provided, history, currency } = req.body as {
+      const { question, receipts: provided, history, currency, memory } = req.body as {
         question?: string;
         receipts?: Receipt[];
         history?: ChatMessage[];
         currency?: string;
+        memory?: string[];
       };
       if (!question || typeof question !== 'string') {
         res.status(400).json({ error: 'Expected a "question" string.' });
@@ -124,11 +125,13 @@ export function createApp() {
       }
       const receipts = provided && provided.length ? provided : await store.all();
       const context = dataContext(receipts, currency || '$');
+      const facts = Array.isArray(memory) ? memory.filter((m) => typeof m === 'string' && m.trim()) : [];
       const content = await ask(
         { baseUrl: config.llmBaseUrl, apiKey: config.llmApiKey, model: config.llmModel },
         question,
         context,
         history ?? [],
+        facts,
       );
       res.json({ content });
     }),

@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { DEFAULT_SETTINGS, type Receipt, type Settings } from '../types';
+import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from '../types';
 import { EMPTY_LEARNING, type LearningData } from './learning';
 import { ENV_DEFAULTS } from './env';
 
@@ -17,13 +17,17 @@ interface ReceiptDB extends DBSchema {
     key: string;
     value: unknown;
   };
+  memory: {
+    key: string;
+    value: unknown;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<ReceiptDB>> | null = null;
 
 function getDB() {
   if (!dbPromise) {
-    dbPromise = openDB<ReceiptDB>('receipt-scanner', 2, {
+    dbPromise = openDB<ReceiptDB>('receipt-scanner', 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('receipts', { keyPath: 'id' });
@@ -33,6 +37,9 @@ function getDB() {
         }
         if (oldVersion < 2 && !db.objectStoreNames.contains('learning')) {
           db.createObjectStore('learning');
+        }
+        if (oldVersion < 3 && !db.objectStoreNames.contains('memory')) {
+          db.createObjectStore('memory');
         }
       },
     });
@@ -94,14 +101,33 @@ export async function clearLearning(): Promise<void> {
   await db.put('learning', EMPTY_LEARNING, 'app');
 }
 
+export async function loadMemory(): Promise<MemoryFact[]> {
+  const db = await getDB();
+  const stored = (await db.get('memory', 'app')) as MemoryFact[] | undefined;
+  return Array.isArray(stored) ? stored : [];
+}
+
+export async function saveMemory(facts: MemoryFact[]): Promise<void> {
+  const db = await getDB();
+  await db.put('memory', facts, 'app');
+}
+
 export async function exportJSON(): Promise<string> {
-  const [receipts, settings] = await Promise.all([getAllReceipts(), loadSettings()]);
+  const [receipts, settings, memory] = await Promise.all([
+    getAllReceipts(),
+    loadSettings(),
+    loadMemory(),
+  ]);
   const safeSettings = { ...settings, llmApiKey: '' };
-  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: safeSettings, receipts }, null, 2);
+  return JSON.stringify(
+    { version: 1, exportedAt: new Date().toISOString(), settings: safeSettings, receipts, memory },
+    null,
+    2,
+  );
 }
 
 export async function importJSON(json: string): Promise<number> {
-  const data = JSON.parse(json) as { receipts?: Receipt[] };
+  const data = JSON.parse(json) as { receipts?: Receipt[]; memory?: MemoryFact[] };
   const receipts = data.receipts ?? [];
   const db = await getDB();
   const tx = db.transaction('receipts', 'readwrite');
@@ -109,5 +135,8 @@ export async function importJSON(json: string): Promise<number> {
     if (r && r.id) await tx.store.put(r);
   }
   await tx.done;
+  if (Array.isArray(data.memory) && data.memory.length) {
+    await saveMemory(data.memory.filter((f) => f && f.id && typeof f.text === 'string'));
+  }
   return receipts.length;
 }

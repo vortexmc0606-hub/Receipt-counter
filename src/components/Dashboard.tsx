@@ -27,6 +27,7 @@ import {
   receiptTotal,
   savingsOverTime,
 } from '../lib/utils';
+import { todayISO } from '../lib/dates';
 import { Empty, Stat } from './ui';
 
 const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#84cc16', '#64748b'];
@@ -34,7 +35,7 @@ const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'
 export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currency: string }) {
   const stats = useMemo(() => {
     const total = receipts.reduce((s, r) => s + receiptTotal(r), 0);
-    const thisMonth = monthKey(new Date().toISOString().slice(0, 10));
+    const thisMonth = monthKey(todayISO());
     const monthTotal = receipts
       .filter((r) => monthKey(r.date) === thisMonth)
       .reduce((s, r) => s + receiptTotal(r), 0);
@@ -63,7 +64,7 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
     <div className="grid">
       <div className="grid grid-stats">
         <Stat label="Total spent" value={money(stats.total, currency)} sub={`${stats.count} receipts`} icon={<Wallet size={13} />} />
-        <Stat label="This month" value={money(stats.monthTotal, currency)} sub={monthLabel(monthKey(new Date().toISOString().slice(0, 10)))} icon={<TrendingUp size={13} />} />
+        <Stat label="This month" value={money(stats.monthTotal, currency)} sub={monthLabel(monthKey(todayISO()))} icon={<TrendingUp size={13} />} />
         <Stat label="Avg. receipt" value={money(stats.avg, currency)} sub={`${stats.itemCount} items tracked`} icon={<CreditCard size={13} />} />
         <Stat label="Days with spend" value={String(stats.days)} sub="distinct dates" icon={<CalendarDays size={13} />} />
         <Stat label="Total saved" value={money(stats.savings, currency)} sub="from discounts & coupons" icon={<PiggyBank size={13} />} />
