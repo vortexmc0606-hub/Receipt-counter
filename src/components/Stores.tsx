@@ -16,7 +16,7 @@ import { storeFor } from '../lib/learning';
 import { money, prettyDate, receiptTotal, storeTotals, type StoreTotal } from '../lib/utils';
 import { Empty } from './ui';
 
-const COLORS = ['#4f46e5', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#84cc16', '#64748b', '#0ea5e9'];
+const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#84cc16', '#64748b', '#0ea5e9'];
 
 const tooltipStyle = {
   background: 'var(--surface)',

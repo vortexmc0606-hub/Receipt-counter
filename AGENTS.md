@@ -2,72 +2,101 @@
 
 ## Project
 
-Receipt Scanner — a client-only React web app that scans receipts (OCR), extracts line items and
-prices, stores them date-wise in the browser, and answers natural-language questions about the data.
+Receipt Scanner — a React web app that scans receipts (OCR or a vision model), extracts line items
+and prices, stores them date-wise in the browser, and answers natural-language questions about the
+data. An optional Node/Express backend (`server/`) can hold the LLM key and store receipts.
 
 ## Commands
 
 ```bash
-npm install          # install dependencies
-npm run dev          # Vite dev server on http://localhost:12000 (host 0.0.0.0)
-npm run build        # tsc -b && vite build -> dist/
-npm run preview      # serve the production build
-npm run typecheck    # tsc -b --noEmit
+npm install             # install frontend dependencies
+npm run dev             # Vite dev server on http://localhost:12000 (host 0.0.0.0)
+npm run build           # tsc -b && vite build -> dist/
+npm run preview         # serve the production build
+npm run typecheck       # tsc -b --noEmit
+
+npm run install:server  # install backend dependencies (server/)
+npm run dev:server      # backend dev server on http://localhost:8787
+npm run build:server    # compile the backend
+npm run typecheck:server
 ```
 
 The dev server is pinned to port 12000 because that port is exposed publicly in this environment
-(see the `work_hosts` context). `vite.config.ts` sets `allowedHosts: true` so the proxied hostname
-works.
+(see the `work_hosts` context). `vite.config.ts` sets `allowedHosts: true` and proxies `/api` to the
+backend so the frontend can use the same origin during development.
 
 ## Architecture
 
 ```
 src/
   types.ts             Domain types (Receipt, ReceiptItem, Settings, ChatMessage) + CATEGORIES
-  App.tsx              Shell: tab routing, load/save receipts + settings, theme
+  App.tsx              Shell: tab routing, load/save receipts + settings + learning, theme, sync
   components/
     ui.tsx             Modal, Stat, Empty primitives
-    Dashboard.tsx      Stats, monthly bar chart, category pie, top merchants, recent
-    ScanView.tsx       Camera/upload/drag-drop -> OCR -> editable review -> save
+    Dashboard.tsx      Stats, monthly bar chart, category pie, top merchants, savings chart
+    ScanView.tsx       Camera/upload/drag-drop -> backend/AI/OCR -> editable review -> save
     ReceiptsView.tsx   Date-grouped list, search, category filter, detail modal, CSV export
-    Assistant.tsx      Chat UI; local engine first, optional LLM fallback
-    SettingsView.tsx   Currency, theme, LLM endpoint, JSON import/export, clear data
+    Assistant.tsx      Chat UI; local engine first, then backend, then direct LLM
+    SettingsView.tsx   Currency, theme, photo cleanup, backend, LLM endpoint, import/export
+    Trends.tsx         Price history for a single item over time
+    Stores.tsx         Per-store/restaurant spend; click a store to see its receipts
+    LearningView.tsx   What the app has learned from corrections
   lib/
-    ocr.ts             Tesseract.js worker (cached), thumbnail generation
+    ocr.ts             Tesseract.js worker (cached), thumbnails, image load
     parser.ts          Heuristic receipt text -> structured receipt (pure, testable)
-    db.ts              IndexedDB via idb: receipts + settings stores
+    ai.ts              Optional direct-to-provider vision reading (browser-held key)
+    api.ts             Client for the backend (server-held key); optional receipt sync
+    stores.ts          Brand/restaurant catalog + recognizeStore()
+    category.ts        Item categorisation, learns from corrections
+    learning.ts        On-device learning: merchants, items, printed codes, stores
+    db.ts              IndexedDB via idb: receipts, settings, learning stores
     assistant.ts       Local NL query engine + optional OpenAI-compatible client
+    env.ts             Build-time defaults from Vite env vars
     utils.ts           Money/date formatting, grouping, aggregations, CSV
-  styles.css           Design tokens (light/dark), component styles
+  styles.css           Design tokens (light/dark, Volt blue), Liquid Glass, animations
+
+server/
+  src/index.ts         Entry point
+  src/app.ts           Express app: routes, CORS, optional x-app-key guard
+  src/config.ts        Environment configuration
+  src/lib/llm.ts       Vision reading + chat against an OpenAI-compatible endpoint
+  src/lib/store.ts     Receipts persisted to a JSON file (atomic writes)
+  src/lib/context.ts   Receipts -> text for the assistant prompt
 ```
 
 ## Key decisions
 
-- **No backend.** OCR (Tesseract.js) and storage (IndexedDB) run in the browser. Nothing is uploaded
-  unless the user configures their own LLM endpoint.
-- **Parser is pure and framework-free** so it can be tested directly with `node --experimental-strip-types`.
+- **The app works with no backend.** OCR (Tesseract.js) and storage (IndexedDB) run in the browser.
+  The backend is optional and, when set, is preferred for reading and answering because it keeps the
+  LLM key server-side. Never break the on-device-only path.
+- **Reading order in `ScanView`:** backend (`apiBaseUrl`) -> direct vision model (`aiReading`) ->
+  on-device Tesseract OCR. Each falls through to the next on failure, so a scan never hard-fails.
+- **Parser is pure and framework-free** so it can be tested directly with `node`.
   `parseReceiptText()` returns a `ParsedReceipt`; `parsedToReceipt()` wraps it into a stored `Receipt`.
 - **Assistant is local-first.** `answerLocally()` handles totals, categories, merchants, item lookup,
-  averages, counts, and date ranges deterministically. Only unmatched questions fall through to the
-  optional LLM. Keep new intents ordered before the generic "total spend" fallback.
-- **Categories** are guessed from item-name keywords (`guessCategory`) and are user-editable.
+  averages, counts, and date ranges deterministically. Unmatched questions go to the backend, then to
+  a directly configured LLM. Keep new intents ordered before the generic "total spend" fallback.
+- **Store recognition** uses the shared catalog in `stores.ts`; unknown headers are cleaned up and
+  remembered in the learning store so the list grows with use.
+- **The theme is "Volt blue"** (`--primary: #2563eb` light, `#3b82f6` dark).
 
 ## Testing the pure logic
 
-`src/lib/parser.ts` and `src/lib/assistant.ts` import each other only through `utils.ts`/`parser.ts`,
-so bundle a quick script with the local esbuild:
+`src/lib/*` modules can be bundled and run with the local esbuild:
 
 ```bash
 ./node_modules/.bin/esbuild /tmp/test.mjs --bundle --platform=node --format=esm --outfile=/tmp/test.bundle.mjs
 node /tmp/test.bundle.mjs
 ```
 
-Node's `--experimental-strip-types` needs explicit `.ts` extensions in import paths, so bundling is
-easier than running the TS directly.
+Prefer real code paths over mocks. For example, bundle `src/lib/parser.ts` and feed it sample receipt
+text, or bundle `src/lib/stores.ts` and assert `recognizeStore()` for known brands.
 
 ## Git / remote notes
 
 - Remote: `github.com/vortexmc0606-hub/Receipt-counter`, default branch `main`.
-- In this environment `GITHUB_TOKEN` authenticates to the API but is **read-only** — `git push` and
-  all write endpoints return 403. Commit locally and push from an environment with write access.
-- Never push directly to `main`; use a feature branch.
+- Authenticate pushes with the `GITHUB_TOKEN` environment variable:
+  `git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/vortexmc0606-hub/Receipt-counter.git`
+  then `git push origin main`, then reset the remote to the plain URL. Never commit the token.
+- Never force-push. Keep commits small and descriptive.
+
