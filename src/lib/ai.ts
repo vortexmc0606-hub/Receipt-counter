@@ -77,6 +77,13 @@ function asCategory(v: unknown, name: string, store?: string): Category {
 
 const PROMPT = `You are an expert receipt parser. Read the attached receipt image and return ONLY JSON.
 
+Merchant detection is especially important:
+- The store or restaurant name is usually in the TOP 25% of the receipt. Inspect that header first.
+- Read centered, large, bold, stylized, faint, or partially visible brand text.
+- Distinguish the brand from its address, slogan, phone number, and branch number.
+- If the top is damaged or blank, inspect the entire receipt and use logo/context only as supporting evidence.
+- Use a known store identity only when the image provides evidence. If uncertain, return "Unknown merchant"; never guess.
+
 Extract, in this order:
 1. "total": the printed TOTAL / AMOUNT DUE / BALANCE line (the final amount paid).
 2. "subtotal": the printed SUBTOTAL line value.
@@ -100,7 +107,7 @@ Return exactly this JSON shape:
   "savings": number | null
 }
 For each item, "code" is the product/SKU/UPC number printed beside it (e.g. "0073373104514" or "MHK-4471"), or null when none is printed. If a value is unreadable, use null rather than guessing.
-Allowed category values: ${CATEGORIES.join(', ')}.`;
+Allowed category values: ${CATEGORIES.join(', ')}.\nAccuracy rules: preserve printed digits and decimal points; do not confuse item prices with totals; include every purchased item; use null for unreadable values. Check arithmetic consistency, but never change a printed amount to force a match.`;
 
 /** Extracts the first balanced JSON object from a model response. */
 function extractJson(text: string): unknown {

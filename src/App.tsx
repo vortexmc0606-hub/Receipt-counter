@@ -182,76 +182,73 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="topbar">
+    <div className="app app-shell">
+      <aside className="sidebar">
         <div className="brand">
-          <span className="brand-badge">
-            <ReceiptText size={18} />
+          <span className="brand-badge"><ReceiptText size={19} /></span>
+          <span className="brand-lockup">
+            <span className="brand-text">Receiptly</span>
+            <span className="brand-caption">SMART EXPENSES</span>
           </span>
-          <span className="brand-text">Receipt Scanner</span>
         </div>
-        <div className="spacer" />
-        <nav className="nav">
+        <div className="sidebar-label">WORKSPACE</div>
+        <nav className="nav sidebar-nav" aria-label="Main navigation">
           {TABS.map((t) => {
             const Icon = t.icon;
             return (
-              <button
-                key={t.id}
-                className={tab === t.id ? 'active' : ''}
-                onClick={() => setTab(t.id)}
-                title={t.label}
-              >
-                <Icon size={16} />
+              <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)} title={t.label}>
+                <Icon size={18} strokeWidth={1.9} />
                 <span>{t.label}</span>
                 {t.id === 'receipts' && totalCount > 0 && <span className="badge">{totalCount}</span>}
+                {tab === t.id && <span className="nav-active-mark" />}
               </button>
             );
           })}
         </nav>
-        <button
-          className="btn btn-ghost btn-icon"
-          title="Toggle theme"
-          onClick={() => void persistSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}
-        >
-          {settings.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
-      </header>
+        <div className="sidebar-bottom">
+          <div className="privacy-card">
+            <span className="privacy-icon"><Brain size={16} /></span>
+            <div><strong>Your data, your device</strong><span>Private by design</span></div>
+            <span className="privacy-dot" />
+          </div>
+          <div className="sidebar-footer">RECEIPTLY <span>•</span> PERSONAL FINANCE</div>
+        </div>
+      </aside>
 
-      <main className="main">
-        {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
-        {tab === 'scan' && (
-          <ScanView currency={settings.currency} settings={settings} learning={learning} onSave={saveReceipt} />
-        )}
-        {tab === 'receipts' && (
-          <ReceiptsView
-            receipts={receipts}
-            currency={settings.currency}
-            onDelete={removeReceipt}
-            onExportCSV={handleExportCSV}
-          />
-        )}
-        {tab === 'assistant' && (
-          <Assistant receipts={receipts} settings={settings} memory={memory} onMemoryChange={updateMemory} />
-        )}
-        {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
-        {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
-        {tab === 'learning' && (
-          <LearningView
-            data={learning}
-            onImport={handleImportLearning}
-            onClear={handleClearLearning}
-          />
-        )}
-        {tab === 'settings' && (
-          <SettingsView
-            settings={settings}
-            onSave={persistSettings}
+      <section className="workspace">
+        <header className="topbar">
+          <div className="mobile-brand">
+            <span className="brand-badge"><ReceiptText size={18} /></span>
+            <span className="brand-text">Receiptly</span>
+          </div>
+          <div className="topbar-heading">
+            <span className="topbar-kicker">YOUR WORKSPACE</span>
+            <strong>{TABS.find((t) => t.id === tab)?.label ?? 'Dashboard'}</strong>
+          </div>
+          <div className="spacer" />
+          <div className="topbar-status"><span /> All changes saved locally</div>
+          <button className="btn btn-primary topbar-scan" onClick={() => setTab('scan')}>
+            <ScanLine size={16} /> <span>New scan</span>
+          </button>
+          <button className="btn btn-ghost btn-icon theme-toggle" title="Toggle theme" aria-label="Toggle theme"
+            onClick={() => void persistSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}>
+            {settings.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+        </header>
+
+        <main className="main">
+          {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
+          {tab === 'scan' && <ScanView currency={settings.currency} settings={settings} learning={learning} onSave={saveReceipt} />}
+          {tab === 'receipts' && <ReceiptsView receipts={receipts} currency={settings.currency} onDelete={removeReceipt} onExportCSV={handleExportCSV} />}
+          {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} memory={memory} onMemoryChange={updateMemory} />}
+          {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
+          {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
+          {tab === 'learning' && <LearningView data={learning} onImport={handleImportLearning} onClear={handleClearLearning} />}
+          {tab === 'settings' && <SettingsView settings={settings} onSave={persistSettings}
             onExport={async () => download(`receipts-backup-${todayISO()}.json`, await exportJSON())}
-            onImport={handleImport}
-            onClearAll={handleClearAll}
-          />
-        )}
-      </main>
+            onImport={handleImport} onClearAll={handleClearAll} />}
+        </main>
+      </section>
     </div>
   );
 }
