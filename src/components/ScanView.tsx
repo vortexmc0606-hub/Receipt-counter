@@ -12,12 +12,13 @@ import {
   Upload,
 } from 'lucide-react';
 import { CATEGORIES, type Category, type Receipt, type ReceiptItem, type Settings } from '../types';
-import { makeThumbnail, recognizeImageVariants } from '../lib/ocr';
+import { makeThumbnail, recognizeReceiptPasses } from '../lib/ocr';
 import { enhanceDocument } from '../lib/scan';
 import { readReceiptWithAI } from '../lib/ai';
 import { hasBackend, readReceiptViaBackend } from '../lib/api';
 import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
-import { applyLearning, type LearningData } from '../lib/learning';
+import { applyLearning, applySmartTax, type LearningData } from '../lib/learning';
+import { detectLocation, estimateTax, type GeoLocation } from '../lib/geo';
 import { taxFromRate } from '../lib/tax';
 import { money, todayISO } from '../lib/utils';
 import { Modal } from './ui';
@@ -44,11 +45,13 @@ export function ScanView({
   settings,
   learning,
   onSave,
+  onLocation,
 }: {
   currency: string;
   settings: Settings;
   learning: LearningData;
   onSave: (r: Receipt, original?: ParsedReceipt) => Promise<void>;
+  onLocation?: (loc: GeoLocation | null) => void;
 }) {
   const [stage, setStage] = useState<Stage>('idle');
   const [dragover, setDragover] = useState(false);
@@ -134,17 +137,22 @@ export function ScanView({
           }
         }
 
-        // Fallback (and default): on-device Tesseract OCR.
+        // Fallback (and default): on-device Tesseract OCR. Several passes are
+        // tried, best layout model first, and the first parse that reconciles
+        // well is accepted — so a hard photo costs a few passes, not all of them.
         if (!outcome) {
           setStatusText('Reading on your device…');
-          const variants = await recognizeImageVariants(cleaned, (status, p) => {
+          let best: { ocr: { text: string; confidence: number }; parsed: ParsedReceipt } | null = null;
+          for await (const v of recognizeReceiptPasses(cleaned, (status, p) => {
             setStatusText(status);
             setProgress(Math.round(p * 100));
-          });
-          const parses = variants.map((v) => ({ ocr: v, parsed: parseReceiptText(v.text) }));
-          // Keep the parse that reconciles best (total vs. subtotal/tax/items).
-          parses.sort((a, b) => b.parsed.quality - a.parsed.quality);
-          const best = parses[0];
+          })) {
+            const parsed = parseReceiptText(v.text);
+            if (!best || parsed.quality > best.parsed.quality) best = { ocr: v, parsed };
+            // A high-quality parse (total reconciles, items match) will not be
+            // beaten by another pass; stop early instead of grinding through all.
+            if (parsed.quality >= 6 && best.parsed === parsed) break;
+          }
           if (!best || best.ocr.text.trim().length < 8) {
             throw new Error('No readable text was found in that image. Try a clearer, well-lit photo.');
           }
@@ -166,6 +174,30 @@ export function ScanView({
         originalRef.current = raw;
         if (learned.applied.length) {
           notes.push(...learned.applied.map((a) => `Applied from your corrections: ${a}`));
+        }
+
+        // Smart location: when a receipt has a tax line but no readable amount,
+        // estimate the rate from where the purchase was made. The location comes
+        // from the browser (coarse, city-level) or from the address on the
+        // receipt. This only fills a gap — it never overrides a printed figure.
+        if (settings.smartLocation && outcome.tax === undefined) {
+          try {
+            const loc = settings.location ?? (await detectLocation(outcome.rawText));
+            if (loc) {
+              onLocation?.(loc);
+              const est = estimateTax(loc);
+              if (est && est.rate > 0) {
+                const smartApplied: string[] = [];
+                outcome = applySmartTax(outcome, est.rate, est.label, smartApplied);
+                notes.push(...smartApplied);
+                if (!smartApplied.length) {
+                  notes.push(`Location: ${est.label}.`);
+                }
+              }
+            }
+          } catch {
+            /* location is best-effort; ignore failures */
+          }
         }
 
         setWarnings(notes);
@@ -190,7 +222,7 @@ export function ScanView({
         setStage('idle');
       }
     },
-    [currency, settings, learning],
+    [currency, settings, learning, onLocation],
   );
 
   const onFiles = useCallback(

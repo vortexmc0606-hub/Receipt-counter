@@ -1,3 +1,5 @@
+import type { GeoLocation } from './lib/geo';
+
 export type Category =
   | 'Groceries'
   | 'Dining'
@@ -78,6 +80,13 @@ export interface Settings {
    * has not yet learned a rate for that store. Zero means "do not add tax".
    */
   defaultTaxRate: number;
+  /**
+   * When on, the app uses the device's location (or the address printed on the
+   * receipt) to estimate the sales-tax rate when a receipt shows no tax.
+   */
+  smartLocation: boolean;
+  /** The last location resolved for smart tax estimation, kept for reuse. */
+  location: GeoLocation | null;
   theme: 'light' | 'dark';
 }
 
@@ -92,6 +101,8 @@ export const DEFAULT_SETTINGS: Settings = {
   apiBaseUrl: '',
   backendSync: false,
   defaultTaxRate: 0,
+  smartLocation: false,
+  location: null,
   theme: 'light',
 };
 

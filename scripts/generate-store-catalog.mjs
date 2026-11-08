@@ -41,6 +41,69 @@ const KIND_BY_CATEGORY = {
 const RESTAURANT_WORDS =
   /\b(bhavan|chaat|bawarchi|barbeque|barbecue|chowpatty|dosa|biryani|dhaba|curry|tandoor|kebab|grill|restaurant|kitchen|cafe|coffee|pizza|burger|domino|kfc|subway|noodle|thali)\b/;
 
+/**
+ * The spec's coarse categories do not always line up with the app's kinds, and
+ * some stores sit in a group that reads wrong on a receipt (a petrol station is
+ * not a convenience store; a dollar store is not a department store). These
+ * overrides fix the mismatches so the generated catalog matches the app.
+ */
+const FUEL_BRANDS = new Set([
+  'shell',
+  'chevron',
+  'exxon',
+  'mobil',
+  'bp',
+  'texaco',
+  'sunoco',
+  'valero',
+  'phillips 66',
+  'marathon',
+  'speedway',
+]);
+
+/** Exact-name overrides, keyed by the normalised store name. */
+const KIND_OVERRIDES = {
+  'dollar general': 'Convenience',
+  'dollar tree': 'Convenience',
+  'family dollar': 'Convenience',
+  "sam's club": 'Wholesale',
+  "bj's wholesale club": 'Wholesale',
+  'whole foods market': 'Grocery',
+  'h mart': 'Market',
+  'patel brothers': 'Grocery',
+  'india bazaar': 'Grocery',
+  'subzi mandi': 'Grocery',
+  'apna bazaar': 'Grocery',
+  swadeshi: 'Grocery',
+  gamestop: 'Entertainment',
+  newegg: 'Online',
+  'cvs pharmacy': 'Pharmacy',
+  'walmart pharmacy': 'Pharmacy',
+  'costco pharmacy': 'Pharmacy',
+  'kroger pharmacy': 'Pharmacy',
+  'krispy kreme': 'Bakery',
+  cinnabon: 'Bakery',
+  walmart: 'Superstore',
+  target: 'Department',
+  costco: 'Wholesale',
+  speedway: 'Fuel',
+  nordstrom: 'Department',
+  jcpenney: 'Department',
+  uber: 'Other',
+  lyft: 'Other',
+};
+
+/** The spec's group plus the store name decide the app kind. */
+function kindFor(category, key) {
+  if (category === 'gas_and_convenience') {
+    return FUEL_BRANDS.has(key) ? 'Fuel' : 'Convenience';
+  }
+  if (category === 'indian_stores_and_restaurants' && RESTAURANT_WORDS.test(key)) {
+    return 'Restaurant';
+  }
+  return KIND_OVERRIDES[key] ?? KIND_BY_CATEGORY[category];
+}
+
 /** The apostrophe/dot-stripped spelling, so "McDonald's" also matches "MCDONALDS". */
 function compactAlias(name) {
   return name
@@ -76,10 +139,7 @@ for (const [category, names] of Object.entries(groups)) {
     const key = normKey(name);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    const thisKind =
-      category === 'indian_stores_and_restaurants' && RESTAURANT_WORDS.test(key)
-        ? 'Restaurant'
-        : kind;
+    const thisKind = kindFor(category, key);
     const aliases = [];
     const compact = compactAlias(name);
     if (compact && compact !== key) aliases.push(compact);

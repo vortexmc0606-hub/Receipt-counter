@@ -12,7 +12,8 @@
     "build:server": "npm --prefix server run build",
     "typecheck:server": "npm --prefix server run typecheck",
     "install:server": "npm --prefix server install",
-    "gen:stores": "node scripts/generate-store-catalog.mjs"
+    "gen:stores": "node scripts/generate-store-catalog.mjs",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

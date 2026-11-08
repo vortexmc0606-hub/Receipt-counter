@@ -217,6 +217,30 @@ function applyDefaultTax(parsed: ParsedReceipt, rate: number, applied: string[])
 }
 
 /**
+ * Applies a location-based tax estimate when the receipt shows a tax line but no
+ * readable amount, and the store has no learned rate. The estimate is the lowest
+ * priority source of tax, so it only fills a genuine gap — it never overrides a
+ * printed amount, a printed rate, or a rate learned for the store.
+ */
+export function applySmartTax(
+  parsed: ParsedReceipt,
+  rate: number,
+  label: string,
+  applied: string[],
+): ParsedReceipt {
+  if (!(rate > 0) || parsed.tax !== undefined) return parsed;
+  if (!hasTaxLabel(parsed.rawText)) return parsed;
+  const itemsSum = round2(parsed.items.reduce((s, i) => s + i.price, 0));
+  const base = parsed.subtotal ?? itemsSum;
+  if (!(base > 0)) return parsed;
+  const tax = taxFromRate(base, rate);
+  if (!(tax > 0)) return parsed;
+  applied.push(`Estimated tax from your location — ${label}: tax ${tax.toFixed(2)} added.`);
+  const total = parsed.total > base + 0.005 ? parsed.total : round2(base + tax);
+  return { ...parsed, tax, taxRate: rate, total };
+}
+
+/**
  * Applies a store's learned tax rate when the receipt shows a tax line but no
  * usable amount. Requiring the tax line keeps a genuinely tax-free receipt from
  * being given tax it never had. A note explains where the amount came from.

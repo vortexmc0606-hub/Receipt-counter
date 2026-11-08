@@ -4,6 +4,7 @@ import type { Settings } from '../types';
 import { Modal } from './ui';
 import { HAS_SHARED_KEY } from '../lib/env';
 import { backendStatus } from '../lib/api';
+import { describeLocation, detectLocation, estimateTax } from '../lib/geo';
 
 export function SettingsView({
   settings,
@@ -25,11 +26,33 @@ export function SettingsView({
   const [checking, setChecking] = useState(false);
   const [backendMsg, setBackendMsg] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState(false);
+  const [locMsg, setLocMsg] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   const patch = (p: Partial<Settings>) => {
     setDraft((d) => ({ ...d, ...p }));
     setSaved(false);
+  };
+
+  const detectHere = async () => {
+    setLocating(true);
+    setLocMsg(null);
+    try {
+      const loc = await detectLocation();
+      if (!loc) {
+        setLocMsg('Could not determine your location. Turn on smart location and check the browser permission.');
+        return;
+      }
+      patch({ location: loc, smartLocation: true });
+      const est = estimateTax(loc);
+      setLocMsg(
+        `Detected ${describeLocation(loc) || 'your area'}.` +
+          (est ? ` Estimated sales tax ${est.rate}% — ${est.label}.` : ' No tax estimate available for this area.'),
+      );
+    } finally {
+      setLocating(false);
+    }
   };
 
   const checkBackend = async () => {
@@ -88,6 +111,45 @@ export function SettingsView({
               Used when a receipt shows no tax and the app has not yet learned a rate for that store.
               Leave at 0 to never add tax automatically.
             </p>
+          </div>
+          <div className="field">
+            <label>Smart location &amp; tax</label>
+            <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={draft.smartLocation}
+                onChange={(e) => patch({ smartLocation: e.target.checked })}
+              />
+              <span>Estimate sales tax from where I am</span>
+            </label>
+            <p className="tiny muted" style={{ marginTop: 4 }}>
+              When a receipt shows tax but not the amount, the app uses your location (or the address
+              printed on the receipt) to estimate the rate. Your location never leaves this device.
+            </p>
+            <div className="row" style={{ gap: 8, marginTop: 6 }}>
+              <button className="btn" onClick={() => void detectHere()} disabled={locating}>
+                {locating ? 'Detecting…' : 'Detect my location'}
+              </button>
+              {draft.location && (
+                <button className="btn" onClick={() => patch({ location: null })}>
+                  Clear
+                </button>
+              )}
+            </div>
+            {draft.location && (
+              <p className="tiny" style={{ marginTop: 6 }}>
+                Saved location: {describeLocation(draft.location) || 'set'}
+                {(() => {
+                  const est = estimateTax(draft.location);
+                  return est ? ` — approx. ${est.rate}% sales tax` : '';
+                })()}
+              </p>
+            )}
+            {locMsg && (
+              <p className="tiny muted" style={{ marginTop: 4 }}>
+                {locMsg}
+              </p>
+            )}
           </div>
           <div className="field">
             <label>Theme</label>

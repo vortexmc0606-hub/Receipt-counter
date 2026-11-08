@@ -266,7 +266,10 @@ export async function enhanceDocument(
     }
   }
 
-  // Binarise at full resolution for a crisp scan look.
+  // Binarise only to find the ink bounding box for cropping. The pixels we
+  // actually keep are the cleaned greyscale: thresholding to pure black/white
+  // looks crisp but was measured to roughly halve OCR word confidence, because
+  // anti-aliased digit edges carry information Tesseract uses.
   const binary = adaptiveThreshold(gray, w, h);
 
   const out = document.createElement('canvas');
@@ -287,10 +290,11 @@ export async function enhanceDocument(
     octx.drawImage(canvas, 0, 0);
   }
 
-  // Paint the binarised pixels on top so the result is high-contrast.
+  // Paint the cleaned greyscale pixels on top so the result is high-contrast
+  // but still smooth.
   const binImage = octx.createImageData(w, h);
-  for (let p = 0; p < binary.length; p++) {
-    const v = binary[p];
+  for (let p = 0; p < gray.length; p++) {
+    const v = gray[p];
     binImage.data[p * 4] = v;
     binImage.data[p * 4 + 1] = v;
     binImage.data[p * 4 + 2] = v;

@@ -220,7 +220,17 @@ export default function App() {
       <main className="main">
         {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
         {tab === 'scan' && (
-          <ScanView currency={settings.currency} settings={settings} learning={learning} onSave={saveReceipt} />
+          <ScanView
+            currency={settings.currency}
+            settings={settings}
+            learning={learning}
+            onSave={saveReceipt}
+            onLocation={(loc) => {
+              if (loc && JSON.stringify(loc) !== JSON.stringify(settings.location)) {
+                void persistSettings({ ...settings, location: loc });
+              }
+            }}
+          />
         )}
         {tab === 'receipts' && (
           <ReceiptsView

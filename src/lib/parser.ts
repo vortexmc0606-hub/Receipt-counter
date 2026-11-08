@@ -53,6 +53,18 @@ const SAVINGS_LINE =
 const ADDRESS_LIKE =
   /^\s*\d+\s+\w+(\s+\w+)*\s+(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|suite|ste)\b/i;
 
+/**
+ * Tax summary lines. "SALES TAX 0.66" and "STATE TAX" do not start with the word
+ * "tax", so the anchored NON_ITEM pattern misses them and their amount gets read
+ * as a purchased item. Any line naming a tax type is a summary, not a product.
+ */
+const TAX_SUMMARY =
+  /\b(sales|state|city|county|local|use|excise|goods\s+and\s+services|value\s+added|liquor|tobacco)\s+tax\b|\b(vat|gst|hst|pst|qst)\b/i;
+
+/** Card/bank payment lines ("VISA CREDIT 12.00", "DEBIT CARD ..."). */
+const PAYMENT_LINE =
+  /\b(visa|mastercard|master\s+card|amex|american\s+express|discover|debit|credit|eft|e-?transfer|interac|auth|approval)\b/i;
+
 function toNumber(raw: string): number {
   // Handles "1,234.56", "12.50", "12,50" (comma decimal), and trailing minus.
   let s = raw.trim();
@@ -277,6 +289,8 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
     const line = lines[i].trim();
     if (line.length < 2) continue;
     if (NON_ITEM.test(line)) continue;
+    if (TAX_SUMMARY.test(line)) continue;
+    if (PAYMENT_LINE.test(line)) continue;
     if (SAVINGS_LINE.test(line)) continue;
     if (ADDRESS_LIKE.test(line)) continue;
 
