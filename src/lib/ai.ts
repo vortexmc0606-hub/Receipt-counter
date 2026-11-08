@@ -1,7 +1,8 @@
 import type { Category, ReceiptItem, Settings } from '../types';
 import { CATEGORIES } from '../types';
 import { loadBitmap } from './ocr';
-import { guessCategory } from './parser';
+import { categorize } from './category';
+import { recognizeStore } from './stores';
 
 /**
  * Reads a receipt with a vision-capable LLM instead of on-device OCR.
@@ -80,12 +81,12 @@ function normalizeDate(v: unknown): string | null {
   return null;
 }
 
-function asCategory(v: unknown, name: string): Category {
+function asCategory(v: unknown, name: string, store?: string): Category {
   if (typeof v === 'string') {
     const hit = CATEGORIES.find((c) => c.toLowerCase() === v.toLowerCase());
     if (hit) return hit;
   }
-  return guessCategory(name);
+  return categorize(name, { store });
 }
 
 const PROMPT = `You are an expert receipt parser. Read the attached receipt image and return ONLY JSON.
@@ -104,13 +105,13 @@ Return exactly this JSON shape:
   "merchant": string,
   "date": "yyyy-mm-dd" | null,
   "currency": string | null,
-  "items": [{ "name": string, "qty": number, "price": number, "category": string }],
+  "items": [{ "name": string, "qty": number, "price": number, "category": string, "code": string | null }],
   "subtotal": number | null,
   "tax": number | null,
   "total": number | null,
   "savings": number | null
 }
-If a value is unreadable, use null rather than guessing.
+For each item, "code" is the product/SKU/UPC number printed beside it (e.g. "0073373104514" or "MHK-4471"), or null when none is printed. If a value is unreadable, use null rather than guessing.
 Allowed category values: ${CATEGORIES.join(', ')}.`;
 
 /** Extracts the first balanced JSON object from a model response. */
@@ -211,6 +212,11 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   const parsed = extractJson(content) as Record<string, unknown>;
   const warnings: string[] = [];
 
+  const merchantRaw =
+    typeof parsed.merchant === 'string' && parsed.merchant.trim()
+      ? parsed.merchant.trim()
+      : 'Unknown merchant';
+
   const items: ReceiptItem[] = [];
   const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
   for (const raw of rawItems) {
@@ -219,12 +225,14 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
     const name = typeof r.name === 'string' ? r.name.trim() : '';
     const price = coerceNumber(r.price);
     if (!name || price === undefined || price <= 0) continue;
+    const code = typeof r.code === 'string' && r.code.trim() ? r.code.trim().toUpperCase() : undefined;
     items.push({
       id: uid(),
       name,
       price: round2(price),
       qty: Math.max(1, Math.round(coerceNumber(r.qty) ?? 1)),
-      category: asCategory(r.category, name),
+      category: asCategory(r.category, name, merchantRaw),
+      code,
     });
   }
 
@@ -232,6 +240,9 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   const tax = coerceNumber(parsed.tax) ?? undefined;
   const savings = coerceNumber(parsed.savings) ?? undefined;
   const itemsSum = round2(items.reduce((s, it) => s + it.price, 0));
+
+  // Map the printed store to its canonical name so spending groups by brand.
+  const merchant = recognizeStore(merchantRaw, items).name;
 
   let total = coerceNumber(parsed.total) ?? 0;
   const expected = subtotal !== undefined ? round2(subtotal + (tax ?? 0)) : undefined;
@@ -257,7 +268,7 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   if (!normalizeDate(parsed.date)) warnings.push('No date found on the receipt; defaulted to today.');
 
   return {
-    merchant: typeof parsed.merchant === 'string' && parsed.merchant.trim() ? parsed.merchant.trim() : 'Unknown merchant',
+    merchant,
     date,
     currency: typeof parsed.currency === 'string' ? parsed.currency : null,
     items,

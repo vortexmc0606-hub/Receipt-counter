@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Brain, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Sun } from 'lucide-react';
+import { BarChart3, Brain, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
 import { DEFAULT_SETTINGS, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
@@ -20,16 +20,20 @@ import { download, receiptsToCSV } from './lib/utils';
 import { Dashboard } from './components/Dashboard';
 import { ScanView } from './components/ScanView';
 import { ReceiptsView } from './components/ReceiptsView';
+import { Trends } from './components/Trends';
+import { Stores } from './components/Stores';
 import { Assistant } from './components/Assistant';
 import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
 
-type Tab = 'dashboard' | 'scan' | 'receipts' | 'assistant' | 'learning' | 'settings';
+type Tab = 'dashboard' | 'scan' | 'receipts' | 'trends' | 'stores' | 'assistant' | 'learning' | 'settings';
 
 const TABS: { id: Tab; label: string; icon: typeof ScanLine }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { id: 'scan', label: 'Scan', icon: ScanLine },
   { id: 'receipts', label: 'Receipts', icon: ReceiptText },
+  { id: 'trends', label: 'Trends', icon: TrendingUp },
+  { id: 'stores', label: 'Stores', icon: StoreIcon },
   { id: 'assistant', label: 'Assistant', icon: Sparkles },
   { id: 'learning', label: 'Learning', icon: Brain },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -184,6 +188,8 @@ export default function App() {
           />
         )}
         {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} />}
+        {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
+        {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
         {tab === 'learning' && (
           <LearningView
             data={learning}

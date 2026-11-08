@@ -7,6 +7,7 @@ export type Category =
   | 'Electronics'
   | 'Clothing'
   | 'Entertainment'
+  | 'Bills'
   | 'Other';
 
 export const CATEGORIES: Category[] = [
@@ -18,6 +19,7 @@ export const CATEGORIES: Category[] = [
   'Electronics',
   'Clothing',
   'Entertainment',
+  'Bills',
   'Other',
 ];
 
@@ -28,6 +30,8 @@ export interface ReceiptItem {
   price: number;
   qty: number;
   category: Category;
+  /** Product/SKU code printed next to the item, when one is present. */
+  code?: string;
 }
 
 export interface Receipt {
@@ -57,6 +61,8 @@ export interface Settings {
   aiReading: boolean;
   /** Vision model used for AI reading (e.g. a multimodal OpenRouter model). */
   visionModel: string;
+  /** Clean up photos (shadow removal, deskew, crop, threshold) before reading. */
+  enhanceScan: boolean;
   theme: 'light' | 'dark';
 }
 
@@ -67,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   llmModel: 'gpt-4o-mini',
   aiReading: false,
   visionModel: 'openai/gpt-4o-mini',
+  enhanceScan: true,
   theme: 'light',
 };
 

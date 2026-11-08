@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Bot, Database, Download, Moon, Save, Sparkles, Sun, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, Database, Download, Moon, Save, ScanLine, Sparkles, Sun, Upload } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import { HAS_SHARED_KEY } from '../lib/env';
@@ -68,6 +68,25 @@ export function SettingsView({
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="card card-pad">
+        <h3 className="section-title">
+          <ScanLine size={16} /> Photo cleanup
+        </h3>
+        <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
+          Clean up each photo like a document scanner: removes shadows and uneven light, levels slight
+          tilts, crops to the receipt, and boosts contrast. This makes both on-device and AI reading
+          more accurate, and the cleaned image is what gets saved.
+        </p>
+        <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={draft.enhanceScan}
+            onChange={(e) => patch({ enhanceScan: e.target.checked })}
+          />
+          <span>Clean up photos before reading</span>
+        </label>
       </div>
 
       <div className="card card-pad">

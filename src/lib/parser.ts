@@ -1,21 +1,37 @@
 import type { Category, Receipt, ReceiptItem } from '../types';
-
-const KEYWORD_CATEGORY: [RegExp, Category][] = [
-  [/milk|bread|egg|cheese|yogurt|apple|banana|tomato|onion|potato|rice|pasta|coffee bean|tea|sugar|flour|butter|chicken|beef|pork|fish|vegetable|fruit|cereal|juice|water|snack|chips|chocolate/i, 'Groceries'],
-  [/burger|pizza|sandwich|salad|fries|sushi|taco|meal|combo|lunch|dinner|breakfast|latte|cappuccino|espresso|beer|wine|cocktail|soda|dessert|cake/i, 'Dining'],
-  [/soap|detergent|shampoo|tissue|paper towel|toothpaste|cleaner|bleach|sponge|trash bag|dish|laundry|napkin/i, 'Household'],
-  [/medicine|tablet|capsule|syrup|vitamin|bandage|mask|sanitizer|pain|aspirin|pharmacy|dental/i, 'Health'],
-  [/fuel|petrol|diesel|gas|toll|parking|bus|train|taxi|uber|lyft|fare|metro|ride/i, 'Transport'],
-  [/cable|charger|battery|headphone|earbud|laptop|phone|usb|adapter|mouse|keyboard|monitor|screen|speaker/i, 'Electronics'],
-  [/shirt|tshirt|jeans|pants|dress|shoe|sneaker|jacket|sock|hat|clothing|apparel/i, 'Clothing'],
-  [/movie|cinema|ticket|game|netflix|spotify|subscription|concert|museum|book|magazine/i, 'Entertainment'],
-];
+import { categorize } from './category';
+import { recognizeStore } from './stores';
 
 export function guessCategory(name: string): Category {
-  for (const [re, cat] of KEYWORD_CATEGORY) {
-    if (re.test(name)) return cat;
+  return categorize(name);
+}
+
+/**
+ * Extracts the product/SKU code printed beside an item, e.g. a UPC/EAN barcode
+ * number ("0073373104514") or an alphanumeric SKU ("MHK-4471"). Codes are a
+ * strong signal for recognising the same product across receipts even when the
+ * printed name is garbled, so they are kept with each item.
+ *
+ * Only a token that is clearly not a price or a pack size is accepted: it must
+ * contain no decimal point, be at least five characters long, and either be
+ * all digits or mix letters with digits. This keeps "92OZ" and "12.99" out.
+ */
+export function extractCode(line: string): string | undefined {
+  const tokens = line.split(/[\s|]+/);
+  for (const raw of tokens) {
+    const t = raw.replace(/^[#*.\-•]+/, '').replace(/[.,;:]+$/, '');
+    if (t.length < 5 || t.length > 20) continue;
+    if (/\./.test(t)) continue; // prices carry a decimal point
+    if (!/^[A-Za-z0-9-]+$/.test(t)) continue;
+    const digits = (t.match(/\d/g) || []).length;
+    const letters = (t.match(/[A-Za-z]/g) || []).length;
+    if (digits < 5 && !(digits >= 2 && letters >= 2)) continue;
+    // Reject plain words and pack sizes like "100ML" or "500G".
+    if (letters === 0 && digits < 8) continue;
+    if (/^\d+(ml|g|kg|oz|l|lb|ct|pk|ea|pc|pcs)$/i.test(t)) continue;
+    return t.toUpperCase();
   }
-  return 'Other';
+  return undefined;
 }
 
 /** Keywords that indicate a summary line rather than a purchasable item. */
@@ -238,7 +254,18 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
         !ADDRESS_LIKE.test(l) &&
         l.trim().length <= 40,
     ) || lines[0] || 'Unknown merchant';
-  const merchant = merchantLine.trim().replace(/\s{2,}/g, ' ');
+  let merchant = merchantLine.trim().replace(/\s{2,}/g, ' ');
+
+  // The store is usually printed at the top. Scan the first lines for a known
+  // chain first — that catches "WALMART #4521 SUPERCENTER" that the name-like
+  // heuristic above would otherwise keep verbatim.
+  for (const l of lines.slice(0, 8)) {
+    const hit = recognizeStore(l);
+    if (hit.known) {
+      merchant = hit.name;
+      break;
+    }
+  }
 
   // ---- totals ----
   const amountOnSummaryLine = (re: RegExp): number | undefined => {
@@ -278,7 +305,8 @@ export function parseReceiptText(rawText: string): ParsedReceipt {
       name,
       price: round2(price),
       qty: quantityFrom(source),
-      category: guessCategory(name),
+      category: categorize(name, { store: merchant }),
+      code: extractCode(source),
     });
   };
 

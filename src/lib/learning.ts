@@ -1,5 +1,6 @@
 import type { ParsedReceipt } from './parser';
 import type { Category, Receipt, ReceiptItem } from '../types';
+import { recognizeStore, storeKind, type StoreKind } from './stores';
 
 /**
  * A lightweight, on-device learning layer.
@@ -25,6 +26,8 @@ export interface LearnedItem {
   name: string;
   price?: number;
   category?: Category;
+  /** Product/SKU code seen with this line, used to match across receipts. */
+  code?: string;
   count: number;
   lastSeen: number;
 }
@@ -40,11 +43,27 @@ export interface JunkLine {
   count: number;
 }
 
+/**
+ * A store the app had not seen before. The printed header is remembered so the
+ * same store is recognised (and grouped) on every later receipt, growing the
+ * store list with use.
+ */
+export interface LearnedStore {
+  /** Normalised printed header that was seen. */
+  from: string;
+  /** Canonical display name to use for it. */
+  name: string;
+  kind: StoreKind;
+  count: number;
+  lastSeen: number;
+}
+
 export interface LearningData {
   version: 1;
   items: LearnedItem[];
   tokenFixes: TokenFix[];
   junk: JunkLine[];
+  stores: LearnedStore[];
   /** Number of receipts whose corrections have been folded in. */
   trainedOn: number;
 }
@@ -54,12 +73,14 @@ export const EMPTY_LEARNING: LearningData = {
   items: [],
   tokenFixes: [],
   junk: [],
+  stores: [],
   trainedOn: 0,
 };
 
 const MAX_ITEMS = 2000;
 const MAX_FIXES = 1500;
 const MAX_JUNK = 500;
+const MAX_STORES = 1000;
 
 /** Lowercases and strips punctuation/spacing so near-identical lines match. */
 export function normalizeName(s: string): string {
@@ -101,6 +122,12 @@ export function applyLearning(parsed: ParsedReceipt, data: LearningData): Applie
   const applied: string[] = [];
   const junkSet = new Set(data.junk.map((j) => j.text));
   const exact = new Map(data.items.map((i) => [i.from, i]));
+  // A product code is the most reliable key: the same SKU is the same product
+  // even when the printed name is read differently each time.
+  const byCode = new Map<string, LearnedItem>();
+  for (const i of data.items) {
+    if (i.code && !byCode.has(i.code)) byCode.set(i.code, i);
+  }
 
   const items: ReceiptItem[] = [];
   for (const item of parsed.items) {
@@ -111,9 +138,9 @@ export function applyLearning(parsed: ParsedReceipt, data: LearningData): Applie
       continue;
     }
 
-    // Prefer an exact remembered line: it carries the correct full name and
-    // casing. Only fall back to per-token fixes when there is no exact match.
-    const learned = exact.get(key);
+    // Prefer a code match, then an exact remembered line; both carry the
+    // correct full name and casing. Fall back to per-token fixes otherwise.
+    const learned = (item.code ? byCode.get(item.code) : undefined) ?? exact.get(key);
     if (learned) {
       let next: ReceiptItem = { ...item };
       if (learned.name && learned.name !== next.name) {
@@ -127,6 +154,7 @@ export function applyLearning(parsed: ParsedReceipt, data: LearningData): Applie
       if (learned.category && learned.category !== next.category) {
         next = { ...next, category: learned.category };
       }
+      if (!next.code && learned.code) next = { ...next, code: learned.code };
       items.push(next);
       continue;
     }
@@ -163,6 +191,7 @@ function rememberLine(data: LearningData, from: string, target: ReceiptItem, pri
     existing.name = target.name;
     existing.category = target.category;
     if (priceMatters) existing.price = target.price;
+    if (target.code) existing.code = target.code;
     existing.count += 1;
     existing.lastSeen = Date.now();
     return;
@@ -173,6 +202,7 @@ function rememberLine(data: LearningData, from: string, target: ReceiptItem, pri
     name: target.name,
     price: priceMatters ? target.price : undefined,
     category: target.category,
+    code: target.code,
     count: 1,
     lastSeen: Date.now(),
   });
@@ -192,10 +222,29 @@ export function learnFromSave(
     items: data.items.map((i) => ({ ...i })),
     tokenFixes: data.tokenFixes.map((t) => ({ ...t })),
     junk: data.junk.map((j) => ({ ...j })),
+    stores: (data.stores ?? []).map((s) => ({ ...s })),
     trainedOn: data.trainedOn,
   };
   const finalByKey = new Map(final.items.map((i) => [normalizeName(i.name), i]));
   let learnedSomething = false;
+
+  // Remember the store. If the header the reader produced was mapped to a
+  // different canonical name than what the user saved, teach that mapping.
+  const rawStore = (original.merchant || '').trim();
+  if (rawStore && final.merchant) {
+    const from = normalizeName(rawStore);
+    if (from.length >= 3) {
+      const match = recognizeStore(rawStore, final.items, next.stores);
+      if (!match.known || match.name !== final.merchant) {
+        const kind = match.kind !== 'Other' ? match.kind : storeKind(final.merchant);
+        bumpStore(next, from, final.merchant, kind);
+        learnedSomething = true;
+      } else if (match.known && !next.stores.some((s) => s.from === from)) {
+        // First sighting of a known chain: record it so it groups consistently.
+        bumpStore(next, from, match.name, match.kind);
+      }
+    }
+  }
 
   for (const pred of original.items) {
     const pk = normalizeName(pred.name);
@@ -218,12 +267,13 @@ export function learnFromSave(
 
     const tk = normalizeName(target.name);
     const priceChanged = Math.abs(target.price - pred.price) > 0.001;
-    if (tk !== pk) {
+    const categoryChanged = target.category !== pred.category;
+    // Remember the line when anything about it was corrected, and also when a
+    // product code is present — the code→name mapping teaches future scans even
+    // when this particular read happened to be correct.
+    if (tk !== pk || priceChanged || categoryChanged || target.code) {
       rememberLine(next, pk, target, priceChanged);
-      learnTokenFixes(pk, target.name, next);
-      learnedSomething = true;
-    } else if (priceChanged) {
-      rememberLine(next, pk, target, true);
+      if (tk !== pk) learnTokenFixes(pk, target.name, next);
       learnedSomething = true;
     }
   }
@@ -237,6 +287,28 @@ function sameTokens(a: string, b: string): boolean {
   const bt = new Set(b.split(' ').filter((t) => t.length > 2));
   if (!at.length || !bt.size) return false;
   return at.some((t) => bt.has(t));
+}
+
+/** Records (or refreshes) a learned store mapping. */
+function bumpStore(data: LearningData, from: string, name: string, kind: StoreKind): void {
+  const existing = data.stores.find((s) => s.from === from);
+  if (existing) {
+    existing.name = name;
+    existing.kind = kind;
+    existing.count += 1;
+    existing.lastSeen = Date.now();
+    return;
+  }
+  if (data.stores.length >= MAX_STORES) data.stores.shift();
+  data.stores.push({ from, name, kind, count: 1, lastSeen: Date.now() });
+}
+
+/**
+ * Resolves a receipt's merchant to a canonical store, using everything learned
+ * so far. Used when grouping spending by store.
+ */
+export function storeFor(merchant: string, items: { name: string }[], data: LearningData) {
+  return recognizeStore(merchant, items, data.stores ?? []);
 }
 
 /** Learns per-token letter fixes from a misread name and its correction. */
@@ -255,11 +327,18 @@ function learnTokenFixes(fromNorm: string, toName: string, data: LearningData): 
 }
 
 /** Compact summary for the Learning tab. */
-export function learningSummary(data: LearningData): { lines: number; fixes: number; junk: number; trainedOn: number } {
+export function learningSummary(data: LearningData): {
+  lines: number;
+  fixes: number;
+  junk: number;
+  stores: number;
+  trainedOn: number;
+} {
   return {
     lines: data.items.length,
     fixes: data.tokenFixes.length,
     junk: data.junk.length,
+    stores: (data.stores ?? []).length,
     trainedOn: data.trainedOn,
   };
 }

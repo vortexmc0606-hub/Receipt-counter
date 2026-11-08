@@ -23,7 +23,7 @@ export function LearningView({
   const [confirmClear, setConfirmClear] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const summary = learningSummary(data);
-  const empty = summary.lines === 0 && summary.fixes === 0 && summary.junk === 0;
+  const empty = summary.lines === 0 && summary.fixes === 0 && summary.junk === 0 && summary.stores === 0;
 
   const exportLearning = () => {
     download(
@@ -74,6 +74,10 @@ export function LearningView({
           <div>
             <div className="stat-value">{summary.junk}</div>
             <div className="stat-label">Ignored lines</div>
+          </div>
+          <div>
+            <div className="stat-value">{summary.stores}</div>
+            <div className="stat-label">Stores learned</div>
           </div>
         </div>
       </div>

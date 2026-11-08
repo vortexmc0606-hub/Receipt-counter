@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, type Category, type Receipt, type ReceiptItem, type Settings } from '../types';
 import { makeThumbnail, recognizeImageVariants } from '../lib/ocr';
+import { enhanceDocument } from '../lib/scan';
 import { readReceiptWithAI } from '../lib/ai';
 import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
 import { applyLearning, type LearningData } from '../lib/learning';
@@ -71,6 +72,28 @@ export function ScanView({
         const thumb = await makeThumbnail(file).catch(() => undefined);
         setPreview(thumb ?? null);
 
+        // Clean the photo up first (Apple-style): shadows removed, contrast
+        // normalised, small rotations levelled, paper cropped and thresholded.
+        // The cleaned image is what we read from and what we keep on screen, so
+        // a dim, angled snapshot becomes a flat, high-contrast scan.
+        let cleaned: Blob = file;
+        let cleanedPreview: string | undefined;
+        if (settings.enhanceScan) {
+          setStatusText('Cleaning up the photo…');
+          setProgress(8);
+          try {
+            const enhanced = await enhanceDocument(file);
+            cleaned = enhanced.blob;
+            cleanedPreview = enhanced.dataUrl;
+            if (cleanedPreview) setPreview(cleanedPreview);
+            if (enhanced.angle !== 0 || enhanced.cropped) {
+              notes.push('Straightened and cropped the photo for a clearer read.');
+            }
+          } catch {
+            notes.push('Could not clean up the photo; using it as-is.');
+          }
+        }
+
         let outcome: ReadOutcome | null = null;
 
         // Preferred path: a vision model, when the user has enabled it.
@@ -78,7 +101,7 @@ export function ScanView({
           setStatusText('Reading with AI…');
           setProgress(35);
           try {
-            const ai = await readReceiptWithAI(file, settings);
+            const ai = await readReceiptWithAI(cleaned, settings);
             outcome = { ...ai, quality: 0 };
             notes.push(...ai.warnings);
             notes.push('Read by AI — check the amounts against the photo.');
@@ -93,7 +116,7 @@ export function ScanView({
         // Fallback (and default): on-device Tesseract OCR.
         if (!outcome) {
           setStatusText('Reading on your device…');
-          const variants = await recognizeImageVariants(file, (status, p) => {
+          const variants = await recognizeImageVariants(cleaned, (status, p) => {
             setStatusText(status);
             setProgress(Math.round(p * 100));
           });

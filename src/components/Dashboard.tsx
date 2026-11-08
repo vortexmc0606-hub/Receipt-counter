@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Legend,
   Pie,
@@ -11,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CalendarDays, CreditCard, ReceiptText, TrendingUp, Wallet } from 'lucide-react';
+import { CalendarDays, CreditCard, PiggyBank, ReceiptText, TrendingUp, Wallet } from 'lucide-react';
 import type { Receipt } from '../types';
 import {
   categoryTotals,
@@ -22,6 +25,7 @@ import {
   monthlyTotals,
   prettyDate,
   receiptTotal,
+  savingsOverTime,
 } from '../lib/utils';
 import { Empty, Stat } from './ui';
 
@@ -37,11 +41,13 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
     const itemCount = receipts.reduce((s, r) => s + r.items.length, 0);
     const days = new Set(receipts.map((r) => r.date)).size;
     const avg = receipts.length ? total / receipts.length : 0;
-    return { total, monthTotal, itemCount, days, avg, count: receipts.length };
+    const savings = receipts.reduce((s, r) => s + (r.savings ?? 0), 0);
+    return { total, monthTotal, itemCount, days, avg, count: receipts.length, savings };
   }, [receipts]);
 
   const byCategory = useMemo(() => categoryTotals(receipts), [receipts]);
   const byMonth = useMemo(() => monthlyTotals(receipts).slice(-8), [receipts]);
+  const savingsSeries = useMemo(() => savingsOverTime(receipts).slice(-24), [receipts]);
   const topMerchants = useMemo(() => merchantTotals(receipts).slice(0, 6), [receipts]);
   const recent = useMemo(() => receipts.slice(0, 6), [receipts]);
 
@@ -60,6 +66,50 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
         <Stat label="This month" value={money(stats.monthTotal, currency)} sub={monthLabel(monthKey(new Date().toISOString().slice(0, 10)))} icon={<TrendingUp size={13} />} />
         <Stat label="Avg. receipt" value={money(stats.avg, currency)} sub={`${stats.itemCount} items tracked`} icon={<CreditCard size={13} />} />
         <Stat label="Days with spend" value={String(stats.days)} sub="distinct dates" icon={<CalendarDays size={13} />} />
+        <Stat label="Total saved" value={money(stats.savings, currency)} sub="from discounts & coupons" icon={<PiggyBank size={13} />} />
+      </div>
+
+      <div className="card card-pad">
+        <h3 className="section-title">
+          <PiggyBank size={16} /> Savings over time
+        </h3>
+        {savingsSeries.some((s) => s.savings > 0) ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={savingsSeries} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+              <defs>
+                <linearGradient id="savingsFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--success)" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="var(--success)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 9,
+                  fontSize: 12.5,
+                  color: 'var(--text)',
+                }}
+                formatter={(v: number) => money(v, currency)}
+              />
+              <Area
+                type="monotone"
+                dataKey="savings"
+                stroke="var(--success)"
+                strokeWidth={2.5}
+                fill="url(#savingsFill)"
+                animationDuration={800}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="tiny muted">
+            No savings recorded yet. Receipts that print a “YOU SAVED” line will show up here.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-2">
