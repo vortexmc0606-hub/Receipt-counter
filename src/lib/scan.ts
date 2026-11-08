@@ -191,28 +191,23 @@ export async function enhanceDocument(
   }
   rctx.putImageData(pixels, 0, 0);
 
+  const corrected = document.createElement('canvas');
+  corrected.width = w;
+  corrected.height = h;
+  const cctx = corrected.getContext('2d', { willReadFrequently: true });
+  if (!cctx) throw new Error('Canvas is not available in this browser.');
+  cctx.fillStyle = '#fff';
+  cctx.fillRect(0, 0, w, h);
   if (angle !== 0) {
-    const corrected = document.createElement('canvas');
-    corrected.width = w;
-    corrected.height = h;
-    const cctx = corrected.getContext('2d', { willReadFrequently: true });
-    if (cctx) {
-      cctx.fillStyle = '#fff';
-      cctx.fillRect(0, 0, w, h);
-      cctx.translate(w / 2, h / 2);
-      cctx.rotate((-angle * Math.PI) / 180);
-      cctx.drawImage(rotated, -w / 2, -h / 2);
-      rotated.width = corrected.width;
-      rotated.height = corrected.height;
-      const finalCtx = rotated.getContext('2d', { willReadFrequently: true });
-      finalCtx?.drawImage(corrected, 0, 0);
-    }
-  }
+    cctx.translate(w / 2, h / 2);
+    cctx.rotate((-angle * Math.PI) / 180);
+    cctx.drawImage(rotated, -w / 2, -h / 2);
+  } else { cctx.drawImage(rotated, 0, 0); }
 
   let cropped = false;
-  let output = rotated;
+  let output = corrected;
   if (opts.crop) {
-    const image = rctx.getImageData(0, 0, w, h);
+    const image = cctx.getImageData(0, 0, w, h);
     let minX = w, minY = h, maxX = 0, maxY = 0;
     // Use a dark-pixel bounding box with a generous margin; ignore faint noise.
     for (let y = 0; y < h; y += 2) {
@@ -236,7 +231,7 @@ export async function enhanceDocument(
         output.width = cw;
         output.height = ch;
         const octx = output.getContext('2d');
-        if (octx) octx.drawImage(rotated, x, y, cw, ch, 0, 0, cw, ch);
+        if (octx) octx.drawImage(corrected, x, y, cw, ch, 0, 0, cw, ch);
         cropped = true;
       }
     }
