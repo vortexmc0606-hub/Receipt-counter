@@ -14,6 +14,7 @@ npm run dev             # Vite dev server on http://localhost:12000 (host 0.0.0.
 npm run build           # tsc -b && vite build -> dist/
 npm run preview         # serve the production build
 npm run typecheck       # tsc -b --noEmit
+npm test                # unit tests for the pure logic (scripts/tests/*.test.ts)
 
 npm run install:server  # install backend dependencies (server/)
 npm run dev:server      # backend dev server on http://localhost:8787
@@ -82,15 +83,31 @@ server/
 
 ## Testing the pure logic
 
-`src/lib/*` modules can be bundled and run with the local esbuild:
+`npm test` (`scripts/run-tests.mjs`) compiles `scripts/tests/*.test.ts` with the local esbuild and runs
+them under `node:test`. Suites cover the parser, dates, tax/geo and store recognition. Add a case there
+for any parsing bug you fix — real receipt text (from `Training/*.HEIC` OCR) beats invented fixtures.
+
+You can also bundle any `src/lib/*` module ad hoc:
 
 ```bash
 ./node_modules/.bin/esbuild /tmp/test.mjs --bundle --platform=node --format=esm --outfile=/tmp/test.bundle.mjs
 node /tmp/test.bundle.mjs
 ```
 
-Prefer real code paths over mocks. For example, bundle `src/lib/parser.ts` and feed it sample receipt
-text, or bundle `src/lib/stores.ts` and assert `recognizeStore()` for known brands.
+Prefer real code paths over mocks.
+
+## OCR and parsing notes (measured, not guessed)
+
+- **Page-segmentation mode matters more than preprocessing.** Measured mean word confidence over 10
+  receipt photos: `SINGLE_BLOCK` (Tesseract's default, and what the app used originally) scores
+  39–49, while `AUTO`/`SINGLE_COLUMN`/`SPARSE_TEXT` score 58–63. `recognizeReceiptPasses()` therefore
+  tries the good modes first and stops early once a pass parses well; it never uses `SINGLE_BLOCK`.
+- **Resolution sweet spot is ~2000–2400px on the long edge** (`scan.ts` `maxEdge`). Bigger gains nothing.
+- **Binarization hurts**; a cleaned grayscale/illumination-corrected image reads better.
+- **Summary lines often print the amount before the label** ("247.65 TOTAL PURCHASE", "Amount: 81.41").
+  `NON_ITEM` is anchored to line start, so `SUMMARY_ANYWHERE`/`TOTAL_LINE` catch these anywhere.
+- **Receipts are recent documents.** `parseReceiptDate` scores candidates and rejects dates years in the
+  past or future, so a phone number or SKU that looks date-like cannot win over the real date.
 
 ## Git / remote notes
 
