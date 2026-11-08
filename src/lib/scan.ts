@@ -1,219 +1,154 @@
 import { loadBitmap } from './ocr';
 
 export interface EnhanceResult {
-  /** Cleaned image as a PNG data URL, ready to draw or recognise. */
   dataUrl: string;
-  /** Same image as a JPEG blob, sized for sending to a vision model. */
   blob: Blob;
-  /** Skew that was corrected, in degrees (0 when none was needed). */
   angle: number;
-  /** True when the image was cropped down to the paper. */
   cropped: boolean;
 }
 
 export interface EnhanceOptions {
-  /** Working resolution on the long edge. Higher is slower but sharper. */
   maxEdge?: number;
-  /** Correct small rotations so text lines run level. */
   deskew?: boolean;
-  /** Trim the empty border around the paper. */
   crop?: boolean;
-  /** Remove shadows and uneven lighting before thresholding. */
   shadow?: boolean;
 }
 
 const DEFAULTS: Required<EnhanceOptions> = {
-  maxEdge: 1800,
+  // A hard pixel cap keeps large phone photos from freezing mobile browsers.
+  maxEdge: 1500,
   deskew: true,
   crop: true,
   shadow: true,
 };
 
-function toGray(data: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray {
-  const gray = new Uint8ClampedArray(w * h);
+function grayPixels(data: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(data.length / 4);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    gray[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
+    out[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
   }
-  return gray;
+  return out;
 }
 
-/** Summed-area table for O(1) box means. */
 function integral(src: Uint8ClampedArray, w: number, h: number): Float64Array {
-  const sat = new Float64Array((w + 1) * (h + 1));
+  const stride = w + 1;
+  const sat = new Float64Array(stride * (h + 1));
   for (let y = 0; y < h; y++) {
-    let rowSum = 0;
+    let row = 0;
     for (let x = 0; x < w; x++) {
-      rowSum += src[y * w + x];
-      sat[(y + 1) * (w + 1) + (x + 1)] = sat[y * (w + 1) + (x + 1)] + rowSum;
+      row += src[y * w + x];
+      sat[(y + 1) * stride + x + 1] = sat[y * stride + x + 1] + row;
     }
   }
   return sat;
 }
 
-function boxMean(sat: Float64Array, w: number, h: number, x: number, y: number, r: number): number {
+function localMean(sat: Float64Array, w: number, h: number, x: number, y: number, r: number): number {
   const x1 = Math.max(0, x - r);
   const y1 = Math.max(0, y - r);
   const x2 = Math.min(w - 1, x + r);
   const y2 = Math.min(h - 1, y + r);
-  const W = w + 1;
-  const area = (x2 - x1 + 1) * (y2 - y1 + 1);
-  const sum =
-    sat[(y2 + 1) * W + (x2 + 1)] -
-    sat[y1 * W + (x2 + 1)] -
-    sat[(y2 + 1) * W + x1] +
-    sat[y1 * W + x1];
-  return sum / area;
+  const s = w + 1;
+  const sum = sat[(y2 + 1) * s + x2 + 1] - sat[y1 * s + x2 + 1] -
+    sat[(y2 + 1) * s + x1] + sat[y1 * s + x1];
+  return sum / ((x2 - x1 + 1) * (y2 - y1 + 1));
 }
 
-/**
- * Removes shadows and uneven lighting by dividing each pixel by the local
- * background, so paper becomes uniformly white and ink stays dark. This is the
- * single biggest win for phone photos of receipts.
- */
-function normalizeIllumination(gray: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray {
-  const radius = Math.max(12, Math.round(Math.min(w, h) / 18));
+/** Reduce lighting gradients without destroying the grayscale detail used by vision models. */
+function removeShadows(gray: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray {
   const sat = integral(gray, w, h);
-  const out = new Uint8ClampedArray(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const bg = boxMean(sat, w, h, x, y, radius) || 1;
-      // 255 * pixel / background pushes paper to white and keeps ink dark.
-      const v = (gray[y * w + x] / bg) * 255;
-      out[y * w + x] = v > 255 ? 255 : v;
-    }
-  }
-  return out;
-}
-
-/** Stretches contrast across the 2nd–98th percentile. */
-function contrastStretch(gray: Uint8ClampedArray): Uint8ClampedArray {
-  const hist = new Uint32Array(256);
-  for (let p = 0; p < gray.length; p++) hist[gray[p]]++;
-  const total = gray.length;
-  const loCut = total * 0.02;
-  const hiCut = total * 0.98;
-  let acc = 0;
-  let lo = 0;
-  let hi = 255;
-  for (let v = 0; v < 256; v++) {
-    acc += hist[v];
-    if (acc >= loCut) {
-      lo = v;
-      break;
-    }
-  }
-  acc = 0;
-  for (let v = 255; v >= 0; v--) {
-    acc += hist[v];
-    if (acc >= total - hiCut) {
-      hi = v;
-      break;
-    }
-  }
-  const range = Math.max(1, hi - lo);
+  const radius = Math.max(18, Math.round(Math.min(w, h) / 16));
   const out = new Uint8ClampedArray(gray.length);
-  for (let p = 0; p < gray.length; p++) {
-    const v = ((gray[p] - lo) / range) * 255;
-    out[p] = v < 0 ? 0 : v > 255 ? 255 : v;
-  }
-  return out;
-}
-
-/** Bradley adaptive threshold: locally-dark pixels become black. */
-function adaptiveThreshold(gray: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray {
-  const radius = Math.max(8, Math.round(Math.min(w, h) / 32));
-  const sat = integral(gray, w, h);
-  const out = new Uint8ClampedArray(w * h);
-  const t = 0.86; // keep only pixels clearly darker than their neighbourhood
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const mean = boxMean(sat, w, h, x, y, radius);
-      out[y * w + x] = gray[y * w + x] < mean * t ? 0 : 255;
+      const p = y * w + x;
+      const background = Math.max(1, localMean(sat, w, h, x, y, radius));
+      // Blend original detail with illumination-normalized detail to avoid
+      // amplifying paper texture, folds, and thermal-print noise.
+      const normalized = Math.min(255, (gray[p] / background) * 246);
+      out[p] = Math.max(0, Math.min(255, Math.round(gray[p] * 0.35 + normalized * 0.65)));
     }
   }
   return out;
 }
 
-function otsu(gray: Uint8ClampedArray): number {
+function stretchContrast(gray: Uint8ClampedArray): Uint8ClampedArray {
   const hist = new Uint32Array(256);
-  for (let p = 0; p < gray.length; p++) hist[gray[p]]++;
-  const total = gray.length;
-  let sumAll = 0;
-  for (let v = 0; v < 256; v++) sumAll += v * hist[v];
-  let sumB = 0;
-  let wB = 0;
-  let best = 128;
-  let bestVar = -1;
-  for (let v = 0; v < 256; v++) {
-    wB += hist[v];
-    if (!wB) continue;
-    const wF = total - wB;
-    if (!wF) break;
-    sumB += v * hist[v];
-    const mB = sumB / wB;
-    const mF = (sumAll - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > bestVar) {
-      bestVar = between;
-      best = v;
-    }
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const lowTarget = gray.length * 0.015;
+  const highTarget = gray.length * 0.985;
+  let sum = 0;
+  let low = 0;
+  let high = 255;
+  for (let i = 0; i < 256; i++) {
+    sum += hist[i];
+    if (sum >= lowTarget) { low = i; break; }
   }
-  return best;
+  sum = 0;
+  for (let i = 255; i >= 0; i--) {
+    sum += hist[i];
+    if (sum >= gray.length - highTarget) { high = i; break; }
+  }
+  const range = Math.max(24, high - low);
+  const out = new Uint8ClampedArray(gray.length);
+  for (let i = 0; i < gray.length; i++) {
+    out[i] = Math.max(0, Math.min(255, Math.round(((gray[i] - low) / range) * 255)));
+  }
+  return out;
 }
 
-/**
- * Estimates the small rotation that makes text lines horizontal by maximising
- * the variance of the row-projection profile — level text gives sharp, tall
- * peaks where lines fall.
- */
-function estimateSkew(binary: Uint8ClampedArray, w: number, h: number): number {
+/** Fast low-resolution row-projection estimate; deliberately capped for phones. */
+function estimateSkew(gray: Uint8ClampedArray, w: number, h: number): number {
+  const targetW = Math.min(420, w);
+  const targetH = Math.min(900, Math.max(1, Math.round(h * targetW / w)));
+  const sample = new Uint8ClampedArray(targetW * targetH);
+  for (let y = 0; y < targetH; y++) {
+    for (let x = 0; x < targetW; x++) {
+      sample[y * targetW + x] = gray[Math.min(h - 1, Math.floor(y * h / targetH)) * w +
+        Math.min(w - 1, Math.floor(x * w / targetW))];
+    }
+  }
+  const rows = new Float64Array(targetH);
   let bestAngle = 0;
   let bestScore = -1;
-  const cx = w / 2;
-  const cy = h / 2;
-  for (let angle = -8; angle <= 8; angle += 0.5) {
-    const rad = (angle * Math.PI) / 180;
+  const cx = targetW / 2;
+  const cy = targetH / 2;
+  for (let degrees = -5; degrees <= 5; degrees += 1) {
+    rows.fill(0);
+    const rad = degrees * Math.PI / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
-    const rows = new Float64Array(h);
-    for (let y = 0; y < h; y += 2) {
-      for (let x = 0; x < w; x += 2) {
-        if (binary[y * w + x] !== 0) continue; // only ink
-        const dx = x - cx;
-        const dy = y - cy;
-        const ry = Math.round(dy * cos - dx * sin + cy);
-        if (ry >= 0 && ry < h) rows[ry]++;
+    for (let y = 2; y < targetH; y += 3) {
+      for (let x = 2; x < targetW; x += 3) {
+        if (sample[y * targetW + x] > 150) continue;
+        const ry = Math.round((y - cy) * cos - (x - cx) * sin + cy);
+        if (ry >= 0 && ry < targetH) rows[ry]++;
       }
     }
     let mean = 0;
-    for (let y = 0; y < h; y++) mean += rows[y];
-    mean /= h;
-    let variance = 0;
-    for (let y = 0; y < h; y++) {
+    for (let y = 0; y < targetH; y++) mean += rows[y];
+    mean /= targetH;
+    let score = 0;
+    for (let y = 0; y < targetH; y++) {
       const d = rows[y] - mean;
-      variance += d * d;
+      score += d * d;
     }
-    if (variance > bestScore) {
-      bestScore = variance;
-      bestAngle = angle;
-    }
+    if (score > bestScore) { bestScore = score; bestAngle = degrees; }
   }
-  return bestAngle;
+  // Avoid rotating a clean image because of random texture/noise.
+  return Math.abs(bestAngle) <= 1 ? 0 : bestAngle;
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image.'))), type, quality);
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not encode enhanced image.')), 'image/jpeg', 0.94);
   });
 }
 
 /**
- * Turns a raw phone photo of a receipt into a clean, scan-like image: shadows
- * and uneven light removed, contrast normalised, small rotations levelled,
- * paper cropped to its edges, and text thresholded to crisp black on white.
- *
- * Everything runs locally in the browser. If any step fails the original image
- * is returned, so scanning never breaks because of enhancement.
+ * Creates a vision-friendly scan: grayscale detail is retained (unlike a
+ * pure black/white threshold image), shadows are reduced, contrast is lifted,
+ * and slight rotation is corrected. Processing is bounded to maxEdge pixels.
  */
 export async function enhanceDocument(
   source: Blob,
@@ -221,131 +156,92 @@ export async function enhanceDocument(
 ): Promise<EnhanceResult> {
   const opts = { ...DEFAULTS, ...options };
   const bitmap = await loadBitmap(source);
-  const srcW = bitmap.width;
-  const srcH = bitmap.height;
-  if (!srcW || !srcH) throw new Error('That image could not be opened.');
+  if (!bitmap.width || !bitmap.height) throw new Error('That image could not be opened.');
 
-  const scale = Math.min(4, Math.max(1, opts.maxEdge / Math.max(srcW, srcH)));
-  const w = Math.round(srcW * scale);
-  const h = Math.round(srcH * scale);
+  const scale = Math.min(1, opts.maxEdge / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const input = document.createElement('canvas');
+  input.width = w;
+  input.height = h;
+  const ictx = input.getContext('2d', { willReadFrequently: true });
+  if (!ictx) throw new Error('Canvas is not available in this browser.');
+  ictx.imageSmoothingEnabled = true;
+  ictx.imageSmoothingQuality = 'high';
+  ictx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Canvas is not available in this browser.');
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
+  const sourcePixels = ictx.getImageData(0, 0, w, h);
+  let gray = grayPixels(sourcePixels.data);
+  if (opts.shadow) gray = removeShadows(gray, w, h);
+  gray = stretchContrast(gray);
 
-  const image = ctx.getImageData(0, 0, w, h);
-  let gray = toGray(image.data, w, h);
-  if (opts.shadow) gray = normalizeIllumination(gray, w, h);
-  gray = contrastStretch(gray);
+  const angle = opts.deskew ? estimateSkew(gray, w, h) : 0;
+  const rotated = document.createElement('canvas');
+  rotated.width = w;
+  rotated.height = h;
+  const rctx = rotated.getContext('2d', { willReadFrequently: true });
+  if (!rctx) throw new Error('Canvas is not available in this browser.');
+  const pixels = rctx.createImageData(w, h);
+  for (let p = 0; p < gray.length; p++) {
+    const v = gray[p];
+    pixels.data[p * 4] = v;
+    pixels.data[p * 4 + 1] = v;
+    pixels.data[p * 4 + 2] = v;
+    pixels.data[p * 4 + 3] = 255;
+  }
+  rctx.putImageData(pixels, 0, 0);
 
-  // Work on a downscaled copy for skew estimation to keep it fast.
-  let angle = 0;
-  if (opts.deskew) {
-    const small = document.createElement('canvas');
-    const sw = Math.min(800, w);
-    const sh = Math.max(1, Math.round((h / w) * sw));
-    small.width = sw;
-    small.height = sh;
-    const sctx = small.getContext('2d', { willReadFrequently: true });
-    if (sctx) {
-      const tmp = new Uint8ClampedArray(sw * sh);
-      for (let y = 0; y < sh; y++) {
-        for (let x = 0; x < sw; x++) {
-          tmp[y * sw + x] = gray[Math.min(h - 1, ((y * h) / sh) | 0) * w + Math.min(w - 1, ((x * w) / sw) | 0)];
-        }
-      }
-      const thr = otsu(tmp);
-      const bin = new Uint8ClampedArray(tmp.length);
-      for (let p = 0; p < tmp.length; p++) bin[p] = tmp[p] < thr ? 0 : 255;
-      angle = estimateSkew(bin, sw, sh);
+  if (angle !== 0) {
+    const corrected = document.createElement('canvas');
+    corrected.width = w;
+    corrected.height = h;
+    const cctx = corrected.getContext('2d', { willReadFrequently: true });
+    if (cctx) {
+      cctx.fillStyle = '#fff';
+      cctx.fillRect(0, 0, w, h);
+      cctx.translate(w / 2, h / 2);
+      cctx.rotate((-angle * Math.PI) / 180);
+      cctx.drawImage(rotated, -w / 2, -h / 2);
+      rotated.width = corrected.width;
+      rotated.height = corrected.height;
+      const finalCtx = rotated.getContext('2d', { willReadFrequently: true });
+      finalCtx?.drawImage(corrected, 0, 0);
     }
   }
 
-  // Binarise at full resolution for a crisp scan look.
-  const binary = adaptiveThreshold(gray, w, h);
-
-  const out = document.createElement('canvas');
-  out.width = w;
-  out.height = h;
-  const octx = out.getContext('2d', { willReadFrequently: true });
-  if (!octx) throw new Error('Canvas is not available in this browser.');
-
-  octx.fillStyle = '#ffffff';
-  octx.fillRect(0, 0, w, h);
-  if (angle !== 0) {
-    octx.save();
-    octx.translate(w / 2, h / 2);
-    octx.rotate((-angle * Math.PI) / 180);
-    octx.drawImage(canvas, -w / 2, -h / 2);
-    octx.restore();
-  } else {
-    octx.drawImage(canvas, 0, 0);
-  }
-
-  // Paint the binarised pixels on top so the result is high-contrast.
-  const binImage = octx.createImageData(w, h);
-  for (let p = 0; p < binary.length; p++) {
-    const v = binary[p];
-    binImage.data[p * 4] = v;
-    binImage.data[p * 4 + 1] = v;
-    binImage.data[p * 4 + 2] = v;
-    binImage.data[p * 4 + 3] = 255;
-  }
-
-  // Auto-crop to the ink bounding box with a small margin.
   let cropped = false;
-  let cx0 = 0;
-  let cy0 = 0;
-  let cw = w;
-  let ch = h;
+  let output = rotated;
   if (opts.crop) {
-    let minX = w;
-    let minY = h;
-    let maxX = 0;
-    let maxY = 0;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        if (binary[y * w + x] === 0) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
+    const image = rctx.getImageData(0, 0, w, h);
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    // Use a dark-pixel bounding box with a generous margin; ignore faint noise.
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        const p = (y * w + x) * 4;
+        if (image.data[p] < 205) {
+          minX = Math.min(minX, x); minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
         }
       }
     }
     if (maxX > minX && maxY > minY) {
-      const margin = Math.round(Math.min(w, h) * 0.02);
-      cx0 = Math.max(0, minX - margin);
-      cy0 = Math.max(0, minY - margin);
-      cw = Math.min(w - cx0, maxX - minX + margin * 2);
-      ch = Math.min(h - cy0, maxY - minY + margin * 2);
-      cropped = cw < w || ch < h;
+      const margin = Math.round(Math.min(w, h) * 0.025);
+      const x = Math.max(0, minX - margin);
+      const y = Math.max(0, minY - margin);
+      const cw = Math.min(w - x, maxX - minX + margin * 2);
+      const ch = Math.min(h - y, maxY - minY + margin * 2);
+      // Do not crop away large receipt margins; only remove obvious empty borders.
+      if (cw < w * 0.96 || ch < h * 0.96) {
+        output = document.createElement('canvas');
+        output.width = cw;
+        output.height = ch;
+        const octx = output.getContext('2d');
+        if (octx) octx.drawImage(rotated, x, y, cw, ch, 0, 0, cw, ch);
+        cropped = true;
+      }
     }
   }
 
-  const final = document.createElement('canvas');
-  final.width = cw;
-  final.height = ch;
-  const fctx = final.getContext('2d');
-  if (!fctx) throw new Error('Canvas is not available in this browser.');
-  fctx.fillStyle = '#ffffff';
-  fctx.fillRect(0, 0, cw, ch);
-  fctx.putImageData(binImage, 0, 0);
-  if (cropped) {
-    fctx.drawImage(out, cx0, cy0, cw, ch, 0, 0, cw, ch);
-  } else {
-    fctx.drawImage(out, 0, 0);
-  }
-
-  const [dataUrl, blob] = await Promise.all([
-    Promise.resolve(final.toDataURL('image/png')),
-    canvasToBlob(final, 'image/jpeg', 0.9),
-  ]);
-
+  const [dataUrl, blob] = await Promise.all([Promise.resolve(output.toDataURL('image/jpeg', 0.94)), canvasBlob(output)]);
   return { dataUrl, blob, angle, cropped };
 }
