@@ -11,3 +11,6 @@ dist-ssr
 
 # TS build info
 *.tsbuildinfo
+
+# Backend runtime data (receipts)
+server/data

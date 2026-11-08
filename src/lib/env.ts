@@ -6,8 +6,11 @@ import type { Settings } from '../types';
  * The key is supplied through `.env.local` (gitignored) or, for the deployed
  * build, repository secrets injected by the GitHub Actions workflow. When a
  * shared key is present it is used for everyone; otherwise the app falls back to
- * whatever the user typed in Settings. The key is sent straight from the browser
- * to the endpoint, never through a server.
+ * whatever the user typed in Settings.
+ *
+ * Prefer the backend (`VITE_API_BASE_URL`) over baking a key into the browser:
+ * the backend keeps the key server-side. The direct-key path remains for anyone
+ * who wants a pure static deployment.
  */
 export const ENV_DEFAULTS: Partial<Settings> = {
   llmBaseUrl: import.meta.env.VITE_LLM_BASE_URL || undefined,
@@ -15,6 +18,8 @@ export const ENV_DEFAULTS: Partial<Settings> = {
   llmModel: import.meta.env.VITE_LLM_MODEL || undefined,
   visionModel: import.meta.env.VITE_VISION_MODEL || undefined,
   aiReading: import.meta.env.VITE_AI_READING ? import.meta.env.VITE_AI_READING === 'true' : undefined,
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || undefined,
+  backendSync: import.meta.env.VITE_BACKEND_SYNC ? import.meta.env.VITE_BACKEND_SYNC === 'true' : undefined,
 };
 
 /**

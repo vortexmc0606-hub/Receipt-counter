@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bot, Loader2, Send, Sparkles, User } from 'lucide-react';
 import type { ChatMessage, Receipt, Settings } from '../types';
 import { answerLocally, askLLM, newMessage } from '../lib/assistant';
+import { askBackend, hasBackend } from '../lib/api';
 
 const SUGGESTIONS = [
   'How much did I spend this month?',
@@ -46,6 +47,9 @@ export function Assistant({
       const local = answerLocally(question, receipts, settings.currency);
       if (local) {
         setMessages((m) => [...m, newMessage('assistant', local.content, { table: local.table, sources: ['local'] })]);
+      } else if (hasBackend(settings)) {
+        const content = await askBackend(question, receipts, settings, messages);
+        setMessages((m) => [...m, newMessage('assistant', content, { sources: ['server'] })]);
       } else if (settings.llmBaseUrl) {
         const res = await askLLM(question, receipts, settings, messages);
         setMessages((m) => [...m, newMessage('assistant', res.content, { sources: ['llm'] })]);

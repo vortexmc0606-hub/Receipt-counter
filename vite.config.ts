@@ -11,6 +11,14 @@ export default defineConfig({
     port: 12000,
     strictPort: false,
     allowedHosts: true,
+    // Convenience for local development: requests to /api go to the backend,
+    // so the frontend can use the same origin (http://localhost:12000).
+    proxy: {
+      '/api': {
+        target: process.env.BACKEND_URL || 'http://localhost:8787',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     host: '0.0.0.0',

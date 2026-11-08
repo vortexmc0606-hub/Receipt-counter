@@ -22,6 +22,12 @@ import { ScanView } from './components/ScanView';
 import { ReceiptsView } from './components/ReceiptsView';
 import { Trends } from './components/Trends';
 import { Stores } from './components/Stores';
+import {
+  deleteBackendReceipt,
+  fetchBackendReceipts,
+  hasBackend,
+  pushBackendReceipt,
+} from './lib/api';
 import { Assistant } from './components/Assistant';
 import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
@@ -57,6 +63,21 @@ export default function App() {
       setSettings(s);
       setLearning(l);
       setLoading(false);
+      // When backend sync is on, pull anything the server has that this device
+      // does not, so receipts show up across devices.
+      if (hasBackend(s) && s.backendSync) {
+        try {
+          const remote = await fetchBackendReceipts(s);
+          const localIds = new Set(r.map((x) => x.id));
+          const missing = remote.filter((x) => !localIds.has(x.id));
+          if (missing.length) {
+            for (const receipt of missing) await putReceipt(receipt);
+            setReceipts(await getAllReceipts());
+          }
+        } catch {
+          /* offline or server down — the local copy still works */
+        }
+      }
     })();
   }, []);
 
@@ -67,6 +88,10 @@ export default function App() {
   const saveReceipt = useCallback(
     async (receipt: Receipt, original?: ParsedReceipt) => {
       await putReceipt(receipt);
+      if (hasBackend(settings) && settings.backendSync) {
+        // Best-effort: a failed sync must never lose the local save.
+        void pushBackendReceipt(receipt, settings).catch(() => undefined);
+      }
       if (original) {
         const next = learnFromSave(original, receipt, learning);
         await saveLearning(next);
@@ -75,15 +100,18 @@ export default function App() {
       await refresh();
       setTab('receipts');
     },
-    [refresh, learning],
+    [refresh, learning, settings],
   );
 
   const removeReceipt = useCallback(
     async (id: string) => {
       await deleteReceipt(id);
+      if (hasBackend(settings) && settings.backendSync) {
+        void deleteBackendReceipt(id, settings).catch(() => undefined);
+      }
       await refresh();
     },
-    [refresh],
+    [refresh, settings],
   );
 
   const persistSettings = useCallback(async (next: Settings) => {

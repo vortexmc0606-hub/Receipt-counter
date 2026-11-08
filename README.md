@@ -4,7 +4,17 @@ Scan receipts with your camera or upload photos, and the app reads every line it
 date-organised spending record. An assistant answers questions about your data in plain English.
 
 Everything runs in the browser. Receipt images and text never leave your device unless you add your
-own LLM endpoint in Settings.
+own LLM endpoint in Settings, or point the app at the optional backend.
+
+## Backend (optional)
+
+`server/` holds a small Node/Express API that keeps the LLM API key on the server
+instead of in the browser, and can store receipts so they sync across devices.
+That is the safest way to give everyone one shared key without exposing it.
+
+- The app stays fully functional on-device with no backend.
+- Set the backend URL in **Settings → Backend** (or build with `VITE_API_BASE_URL`).
+- See [`server/README.md`](server/README.md) for setup, configuration, and the API.
 
 ## Features
 

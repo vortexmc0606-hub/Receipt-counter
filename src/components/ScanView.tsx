@@ -15,6 +15,7 @@ import { CATEGORIES, type Category, type Receipt, type ReceiptItem, type Setting
 import { makeThumbnail, recognizeImageVariants } from '../lib/ocr';
 import { enhanceDocument } from '../lib/scan';
 import { readReceiptWithAI } from '../lib/ai';
+import { hasBackend, readReceiptViaBackend } from '../lib/api';
 import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
 import { applyLearning, type LearningData } from '../lib/learning';
 import { money, todayISO } from '../lib/utils';
@@ -96,8 +97,26 @@ export function ScanView({
 
         let outcome: ReadOutcome | null = null;
 
-        // Preferred path: a vision model, when the user has enabled it.
-        if (settings.aiReading && settings.llmBaseUrl.trim()) {
+        // Preferred path: the backend, which holds the API key so this browser
+        // never sees it.
+        if (hasBackend(settings)) {
+          setStatusText('Reading via server…');
+          setProgress(35);
+          try {
+            const ai = await readReceiptViaBackend(cleaned, settings);
+            outcome = { ...ai, quality: 0 };
+            notes.push(...ai.warnings);
+            notes.push('Read by the server — check the amounts against the photo.');
+          } catch (apiErr) {
+            notes.push(
+              `Server reading failed (${apiErr instanceof Error ? apiErr.message : 'unknown error'}). ` +
+                'Fell back to on-device reading.',
+            );
+          }
+        }
+
+        // Next: a vision model called directly from this browser.
+        if (!outcome && settings.aiReading && settings.llmBaseUrl.trim()) {
           setStatusText('Reading with AI…');
           setProgress(35);
           try {

@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Bot, Database, Download, Moon, Save, ScanLine, Sparkles, Sun, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, Database, Download, Moon, Save, ScanLine, Server, Sparkles, Sun, Upload } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import { HAS_SHARED_KEY } from '../lib/env';
+import { backendStatus } from '../lib/api';
 
 export function SettingsView({
   settings,
@@ -21,11 +22,33 @@ export function SettingsView({
   const [saved, setSaved] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [backendMsg, setBackendMsg] = useState<string | null>(null);
+  const [backendOk, setBackendOk] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   const patch = (p: Partial<Settings>) => {
     setDraft((d) => ({ ...d, ...p }));
     setSaved(false);
+  };
+
+  const checkBackend = async () => {
+    setChecking(true);
+    setBackendMsg(null);
+    try {
+      const status = await backendStatus({ ...draft, apiBaseUrl: draft.apiBaseUrl.trim() });
+      setBackendOk(status.enabled);
+      setBackendMsg(
+        status.enabled
+          ? `Connected. Server AI reading is on (${status.visionModel ?? status.model}).`
+          : 'Connected, but the server has no API key configured — it will use on-device reading.',
+      );
+    } catch (e) {
+      setBackendOk(false);
+      setBackendMsg(`Could not reach the backend: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setChecking(false);
+    }
   };
 
   const save = async () => {
@@ -87,6 +110,46 @@ export function SettingsView({
           />
           <span>Clean up photos before reading</span>
         </label>
+      </div>
+
+      <div className="card card-pad">
+        <h3 className="section-title">
+          <Server size={16} /> Backend (optional)
+        </h3>
+        <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
+          Point this app at the Receipt Scanner backend and the server holds the API key — this
+          browser never sees it, and receipts can sync across devices. Leave the URL empty to keep
+          everything on-device.
+        </p>
+        <div className="field">
+          <label>Backend URL</label>
+          <input
+            className="input"
+            placeholder="https://your-backend.example.com"
+            value={draft.apiBaseUrl}
+            onChange={(e) => patch({ apiBaseUrl: e.target.value })}
+          />
+        </div>
+        <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 14 }}>
+          <input
+            type="checkbox"
+            checked={draft.backendSync}
+            onChange={(e) => patch({ backendSync: e.target.checked })}
+          />
+          <span>Sync receipts with the backend</span>
+        </label>
+        {draft.apiBaseUrl.trim() && (
+          <div className="row" style={{ marginTop: 12, gap: 8, alignItems: 'center' }}>
+            <button className="btn btn-sm" onClick={checkBackend} disabled={checking}>
+              {checking ? 'Checking…' : 'Test connection'}
+            </button>
+            {backendMsg && (
+              <span className="tiny muted" style={{ color: backendOk ? undefined : '#c0392b' }}>
+                {backendMsg}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card card-pad">

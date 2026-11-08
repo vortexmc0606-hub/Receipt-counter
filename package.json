@@ -7,7 +7,11 @@
     "dev": "vite --host 0.0.0.0 --port 12000",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 12000",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "dev:server": "npm --prefix server run dev",
+    "build:server": "npm --prefix server run build",
+    "typecheck:server": "npm --prefix server run typecheck",
+    "install:server": "npm --prefix server install"
   },
   "dependencies": {
     "date-fns": "^3.6.0",

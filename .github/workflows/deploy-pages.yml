@@ -41,6 +41,10 @@ jobs:
           VITE_LLM_MODEL: ${{ secrets.LLM_MODEL }}
           VITE_VISION_MODEL: ${{ secrets.VISION_MODEL }}
           VITE_AI_READING: "true"
+          # Optional: point the built app at your backend so the key lives on
+          # the server instead of in this bundle. Set the BACKEND_URL secret.
+          VITE_API_BASE_URL: ${{ secrets.BACKEND_URL }}
+          VITE_BACKEND_SYNC: ${{ secrets.BACKEND_SYNC }}
 
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html

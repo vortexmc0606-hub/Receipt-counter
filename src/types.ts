@@ -63,6 +63,14 @@ export interface Settings {
   visionModel: string;
   /** Clean up photos (shadow removal, deskew, crop, threshold) before reading. */
   enhanceScan: boolean;
+  /**
+   * Base URL of the Receipt Scanner backend. When set, receipt reading and the
+   * assistant go through the server, which holds the API key — so no key is ever
+   * exposed in this browser. Leave empty to run fully on-device.
+   */
+  apiBaseUrl: string;
+  /** Push each saved receipt to the backend so it is available across devices. */
+  backendSync: boolean;
   theme: 'light' | 'dark';
 }
 
@@ -74,6 +82,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aiReading: false,
   visionModel: 'openai/gpt-4o-mini',
   enhanceScan: true,
+  apiBaseUrl: '',
+  backendSync: false,
   theme: 'light',
 };
 
