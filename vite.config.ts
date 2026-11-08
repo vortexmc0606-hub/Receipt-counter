@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  // GitHub Pages serves the app from /<repo>/, so the asset base must match.
+  // Locally the dev server stays at the root.
+  base: process.env.GITHUB_PAGES ? '/Receipt-counter/' : '/',
   plugins: [react()],
   server: {
     host: '0.0.0.0',
