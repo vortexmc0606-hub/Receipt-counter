@@ -1,10 +1,18 @@
 import { loadBitmap } from './ocr';
+import { detectDocument } from './cv/detector';
+import { warpPerspective, warpSize } from './cv/geometry';
+import { analyzeQuality, type QualityReport } from './cv/quality';
+import { blackoutRegions, describeRedactions, redactText, type Box, type RedactionKind } from './redact';
 
 export interface EnhanceResult {
   dataUrl: string;
   blob: Blob;
   angle: number;
   cropped: boolean;
+  /** True when a document boundary was found and the perspective was corrected. */
+  perspective: boolean;
+  /** Confidence (0..1) of the detected boundary, or 0 when none was used. */
+  perspectiveScore: number;
 }
 
 export interface EnhanceOptions {
@@ -12,17 +20,94 @@ export interface EnhanceOptions {
   deskew?: boolean;
   crop?: boolean;
   shadow?: boolean;
+  /** Correct the perspective of a skewed photo. */
+  perspective?: boolean;
 }
 
 const DEFAULTS: Required<EnhanceOptions> = {
-  // Hard pixel cap: big enough to keep small digits legible (measured best
-  // around 2000–2400px on the long edge) while still finishing quickly on a
-  // phone. Receipt digits stop improving above ~2400px.
-  maxEdge: 2000,
+  // Hard pixel cap: big enough to keep small digits legible while still
+  // finishing quickly on a phone. Raised from 2000 to 2600 after measuring that
+  // small receipt digits keep improving up to ~2400–2600px on the long edge and
+  // only stop after that.
+  maxEdge: 2600,
   deskew: true,
   crop: true,
   shadow: true,
+  perspective: true,
 };
+
+/** Confidence below which a detected boundary is ignored (deskew/crop only). */
+const MIN_PERSPECTIVE_SCORE = 0.5;
+
+/**
+ * Quick quality check on an image before it is read, so the user can be warned
+ * about a blurry or badly lit photo. Mirrors SmartScan CV's `analyze` command.
+ */
+export async function inspectImage(source: Blob): Promise<QualityReport> {
+  const bitmap = await loadBitmap(source);
+  const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('Canvas is not available in this browser.');
+  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+  return analyzeQuality(data, w, h);
+}
+
+export interface RedactImageResult {
+  dataUrl: string;
+  blob: Blob;
+  /** Number of text lines blacked out. */
+  lines: number;
+  /** Human summary of the kinds of data removed. */
+  summary: string | null;
+}
+
+/**
+ * Blacks out the personal data on a receipt image. The image is OCR'd to locate
+ * each text line, lines that carry a card number, phone, e-mail, address or
+ * person name are painted over, and the cleaned image is returned. This is what
+ * makes a scanned receipt safe to keep or share.
+ */
+export async function redactImage(source: Blob): Promise<RedactImageResult> {
+  const bitmap = await loadBitmap(source);
+  const w = bitmap.width;
+  const h = bitmap.height;
+  if (!w || !h) throw new Error('That image could not be opened.');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('Canvas is not available in this browser.');
+  ctx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
+
+  const { recognizeImageLines } = await import('./ocr');
+  const lines = await recognizeImageLines(source);
+  const boxes: Box[] = [];
+  const totals: Record<RedactionKind, number> = { card: 0, phone: 0, email: 0, address: 0, name: 0 };
+  for (const line of lines) {
+    const result = redactText(line.text);
+    if (result.text !== line.text) {
+      boxes.push(line.bbox);
+      for (const k of Object.keys(result.counts) as RedactionKind[]) totals[k] += result.counts[k];
+    }
+  }
+
+  if (boxes.length) {
+    const image = ctx.getImageData(0, 0, w, h);
+    blackoutRegions(image.data, w, h, boxes);
+    ctx.putImageData(image, 0, 0);
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const blob = await canvasBlob(canvas);
+  return { dataUrl, blob, lines: boxes.length, summary: describeRedactions(totals) };
+}
 
 function grayPixels(data: Uint8ClampedArray): Uint8ClampedArray {
   const out = new Uint8ClampedArray(data.length / 4);
@@ -173,17 +258,41 @@ export async function enhanceDocument(
   ictx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h);
 
   const sourcePixels = ictx.getImageData(0, 0, w, h);
-  let gray = grayPixels(sourcePixels.data);
-  if (opts.shadow) gray = removeShadows(gray, w, h);
+
+  // Perspective correction: if a document boundary can be found, flatten it to
+  // a top-down rectangle before anything else. This is the single biggest win
+  // for a receipt photographed at an angle. Falls back to the untouched pixels
+  // when no confident boundary is present.
+  let working = sourcePixels.data;
+  let workW = w;
+  let workH = h;
+  let perspective = false;
+  let perspectiveScore = 0;
+  if (opts.perspective) {
+    const detection = detectDocument(sourcePixels.data, w, h);
+    if (detection && detection.score >= MIN_PERSPECTIVE_SCORE) {
+      const { width, height } = warpSize(detection.quad);
+      if (width >= 16 && height >= 16) {
+        working = warpPerspective(sourcePixels.data, w, h, detection.quad, width, height);
+        workW = width;
+        workH = height;
+        perspective = true;
+        perspectiveScore = detection.score;
+      }
+    }
+  }
+
+  let gray = grayPixels(working);
+  if (opts.shadow) gray = removeShadows(gray, workW, workH);
   gray = stretchContrast(gray);
 
-  const angle = opts.deskew ? estimateSkew(gray, w, h) : 0;
+  const angle = opts.deskew ? estimateSkew(gray, workW, workH) : 0;
   const rotated = document.createElement('canvas');
-  rotated.width = w;
-  rotated.height = h;
+  rotated.width = workW;
+  rotated.height = workH;
   const rctx = rotated.getContext('2d', { willReadFrequently: true });
   if (!rctx) throw new Error('Canvas is not available in this browser.');
-  const pixels = rctx.createImageData(w, h);
+  const pixels = rctx.createImageData(workW, workH);
   for (let p = 0; p < gray.length; p++) {
     const v = gray[p];
     pixels.data[p * 4] = v;
@@ -194,27 +303,29 @@ export async function enhanceDocument(
   rctx.putImageData(pixels, 0, 0);
 
   const corrected = document.createElement('canvas');
-  corrected.width = w;
-  corrected.height = h;
+  corrected.width = workW;
+  corrected.height = workH;
   const cctx = corrected.getContext('2d', { willReadFrequently: true });
   if (!cctx) throw new Error('Canvas is not available in this browser.');
   cctx.fillStyle = '#fff';
-  cctx.fillRect(0, 0, w, h);
+  cctx.fillRect(0, 0, workW, workH);
   if (angle !== 0) {
-    cctx.translate(w / 2, h / 2);
+    cctx.translate(workW / 2, workH / 2);
     cctx.rotate((-angle * Math.PI) / 180);
-    cctx.drawImage(rotated, -w / 2, -h / 2);
+    cctx.drawImage(rotated, -workW / 2, -workH / 2);
   } else { cctx.drawImage(rotated, 0, 0); }
 
   let cropped = false;
   let output = corrected;
-  if (opts.crop) {
-    const image = cctx.getImageData(0, 0, w, h);
-    let minX = w, minY = h, maxX = 0, maxY = 0;
+  // After a perspective warp the document already fills the frame, so the
+  // dark-pixel crop is unnecessary (and can nibble a printed edge).
+  if (opts.crop && !perspective) {
+    const image = cctx.getImageData(0, 0, workW, workH);
+    let minX = workW, minY = workH, maxX = 0, maxY = 0;
     // Use a dark-pixel bounding box with a generous margin; ignore faint noise.
-    for (let y = 0; y < h; y += 2) {
-      for (let x = 0; x < w; x += 2) {
-        const p = (y * w + x) * 4;
+    for (let y = 0; y < workH; y += 2) {
+      for (let x = 0; x < workW; x += 2) {
+        const p = (y * workW + x) * 4;
         if (image.data[p] < 205) {
           minX = Math.min(minX, x); minY = Math.min(minY, y);
           maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
@@ -222,13 +333,13 @@ export async function enhanceDocument(
       }
     }
     if (maxX > minX && maxY > minY) {
-      const margin = Math.round(Math.min(w, h) * 0.025);
+      const margin = Math.round(Math.min(workW, workH) * 0.025);
       const x = Math.max(0, minX - margin);
       const y = Math.max(0, minY - margin);
-      const cw = Math.min(w - x, maxX - minX + margin * 2);
-      const ch = Math.min(h - y, maxY - minY + margin * 2);
+      const cw = Math.min(workW - x, maxX - minX + margin * 2);
+      const ch = Math.min(workH - y, maxY - minY + margin * 2);
       // Do not crop away large receipt margins; only remove obvious empty borders.
-      if (cw < w * 0.96 || ch < h * 0.96) {
+      if (cw < workW * 0.96 || ch < workH * 0.96) {
         output = document.createElement('canvas');
         output.width = cw;
         output.height = ch;
@@ -240,5 +351,5 @@ export async function enhanceDocument(
   }
 
   const [dataUrl, blob] = await Promise.all([Promise.resolve(output.toDataURL('image/jpeg', 0.94)), canvasBlob(output)]);
-  return { dataUrl, blob, angle, cropped };
+  return { dataUrl, blob, angle, cropped, perspective, perspectiveScore };
 }

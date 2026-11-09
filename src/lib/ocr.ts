@@ -51,17 +51,16 @@ const PASSES: { name: string; psm: PSM }[] = [
  * is kept. Binarisation is deliberately NOT used: thresholding was measured to
  * cut word confidence roughly in half on these receipts.
  */
-async function preprocess(source: Blob, mode: 'gray' | 'illum'): Promise<Blob | string> {
+async function preprocess(source: Blob, mode: 'gray' | 'illum', target = 2600): Promise<Blob | string> {
   try {
     const bitmap = await loadBitmap(source);
     const srcW = bitmap.width;
     const srcH = bitmap.height;
     if (!srcW || !srcH) return source;
 
-    // Target ~2000px on the long edge: enough detail for small digits without
-    // making OCR crawl on a phone. Photos already smaller are left alone.
-    const target = 2000;
-    const scale = Math.min(3.5, Math.max(1, target / Math.max(srcW, srcH)));
+    // Target ~2600px on the long edge: enough detail for the smallest digits
+    // without making OCR crawl on a phone. Photos already smaller are left alone.
+    const scale = Math.min(4, Math.max(1, target / Math.max(srcW, srcH)));
     const w = Math.round(srcW * scale);
     const h = Math.round(srcH * scale);
 
@@ -138,6 +137,7 @@ async function preprocess(source: Blob, mode: 'gray' | 'illum'): Promise<Blob | 
 export async function* recognizeReceiptPasses(
   image: Blob,
   onProgress?: OcrProgress,
+  maxEdge = 2600,
 ): AsyncGenerator<OcrResult> {
   const worker = await getWorker(onProgress);
   const seen = new Set<string>();
@@ -147,7 +147,7 @@ export async function* recognizeReceiptPasses(
   // pixel work is far more expensive than a recognition pass and is independent
   // of the segmentation mode.
   for (const prep of ['illum', 'gray'] as const) {
-    const blob = await preprocess(image, prep);
+    const blob = await preprocess(image, prep, maxEdge);
     for (const { name, psm } of PASSES) {
       try {
         await worker.setParameters({ tessedit_pageseg_mode: psm });
@@ -178,6 +178,40 @@ export async function recognizeImageVariants(
   const results: OcrResult[] = [];
   for await (const r of recognizeReceiptPasses(image, onProgress)) results.push(r);
   return results;
+}
+
+export interface OcrLine {
+  text: string;
+  /** Pixel box on the *original* image, so it can be painted over. */
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/**
+ * Recognises the text on an image and returns each line with its pixel box.
+ * Used to locate the personal data that has to be blacked out of a scan. The
+ * boxes are mapped back to the original image's coordinates.
+ */
+export async function recognizeImageLines(image: Blob): Promise<OcrLine[]> {
+  const worker = await getWorker();
+  const bitmap = await loadBitmap(image);
+  const srcW = bitmap.width || 1;
+  const srcH = bitmap.height || 1;
+  const scale = Math.min(4, Math.max(1, 2600 / Math.max(srcW, srcH)));
+  const blob = await preprocess(image, 'gray');
+  await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
+  const { data } = await worker.recognize(blob);
+  const lines = (data as unknown as { lines?: { text: string; bbox: OcrLine['bbox'] }[] }).lines ?? [];
+  return lines
+    .filter((l) => l.text && l.text.trim().length >= 2 && l.bbox)
+    .map((l) => ({
+      text: l.text.replace(/\s+$/, ''),
+      bbox: {
+        x0: l.bbox.x0 / scale,
+        y0: l.bbox.y0 / scale,
+        x1: l.bbox.x1 / scale,
+        y1: l.bbox.y1 / scale,
+      },
+    }));
 }
 
 /** Downscales an image to a data URL thumbnail to keep IndexedDB small. */

@@ -13,10 +13,12 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, type Category, type Receipt, type ReceiptItem, type Settings } from '../types';
 import { makeThumbnail, recognizeReceiptPasses } from '../lib/ocr';
-import { enhanceDocument } from '../lib/scan';
+import { enhanceDocument, inspectImage, redactImage } from '../lib/scan';
 import { readReceiptWithAI } from '../lib/ai';
 import { hasBackend, readReceiptViaBackend } from '../lib/api';
 import { parseReceiptText, uid, type ParsedReceipt } from '../lib/parser';
+import { redactText, describeRedactions } from '../lib/redact';
+import { reverseSearchStore } from '../lib/reverse-search';
 import { applyLearning, applySmartTax, type LearningData } from '../lib/learning';
 import { detectLocation, estimateTax, type GeoLocation } from '../lib/geo';
 import { taxFromRate } from '../lib/tax';
@@ -78,6 +80,17 @@ export function ScanView({
         const thumb = await makeThumbnail(file).catch(() => undefined);
         setPreview(thumb ?? null);
 
+        // Warn early when the photo itself is unlikely to read well (blurry,
+        // dark, glare) so the user can retake it before we burn time on OCR.
+        if (settings.enhanceScan) {
+          try {
+            const quality = await inspectImage(file);
+            if (!quality.ok) notes.push(`${quality.recommendation} (photo quality)`);
+          } catch {
+            /* quality check is best-effort */
+          }
+        }
+
         // Clean the photo up first (Apple-style): shadows removed, contrast
         // normalised, small rotations levelled, paper cropped and thresholded.
         // The cleaned image is what we read from and what we keep on screen, so
@@ -88,11 +101,13 @@ export function ScanView({
           setStatusText('Cleaning up the photo…');
           setProgress(8);
           try {
-            const enhanced = await enhanceDocument(file);
+            const enhanced = await enhanceDocument(file, { maxEdge: settings.scanResolution });
             cleaned = enhanced.blob;
             cleanedPreview = enhanced.dataUrl;
             if (cleanedPreview) setPreview(cleanedPreview);
-            if (enhanced.angle !== 0 || enhanced.cropped) {
+            if (enhanced.perspective) {
+              notes.push('Straightened the receipt’s perspective for a flat, straight read.');
+            } else if (enhanced.angle !== 0 || enhanced.cropped) {
               notes.push('Straightened and cropped the photo for a clearer read.');
             }
           } catch {
@@ -101,6 +116,25 @@ export function ScanView({
         }
 
         let outcome: ReadOutcome | null = null;
+
+        // Privacy: if an AI path may run, black out card numbers, phones,
+        // addresses and names on the image itself before it can leave the
+        // device. Done once here so both the backend and direct-AI paths are
+        // covered.
+        const willUseAi = hasBackend(settings) || (settings.aiReading && settings.llmBaseUrl.trim());
+        if (willUseAi && settings.redactPersonal) {
+          try {
+            setStatusText('Blacking out personal details…');
+            const redacted = await redactImage(cleaned);
+            if (redacted.lines > 0) {
+              cleaned = redacted.blob;
+              setPreview(redacted.dataUrl);
+              if (redacted.summary) notes.push(redacted.summary);
+            }
+          } catch {
+            /* redaction is best-effort; never block a read on it */
+          }
+        }
 
         // Preferred path: the backend, which holds the API key so this browser
         // never sees it.
@@ -146,7 +180,7 @@ export function ScanView({
           for await (const v of recognizeReceiptPasses(cleaned, (status, p) => {
             setStatusText(status);
             setProgress(Math.round(p * 100));
-          })) {
+          }, settings.scanResolution)) {
             const parsed = parseReceiptText(v.text);
             if (!best || parsed.quality > best.parsed.quality) best = { ocr: v, parsed };
             // A high-quality parse (total reconciles, items match) will not be
@@ -164,6 +198,27 @@ export function ScanView({
             );
           }
           notes.push(...best.parsed.warnings);
+        }
+
+        // Privacy + store ID. Redact the personal data from the text we keep,
+        // then (optionally) identify an unreadable store from the other clues
+        // on the receipt — a reverse search that runs on the redacted text only.
+        if (settings.redactPersonal && outcome.rawText) {
+          const cleanedText = redactText(outcome.rawText);
+          outcome = { ...outcome, rawText: cleanedText.text };
+          const summary = describeRedactions(cleanedText.counts);
+          if (summary) notes.push(summary);
+        }
+        if (settings.reverseStoreSearch && settings.llmBaseUrl.trim() && outcome.rawText) {
+          try {
+            const found = await reverseSearchStore(outcome.rawText, outcome.items, settings);
+            if (found.method !== 'none' && found.match.name && found.match.name !== outcome.merchant) {
+              outcome = { ...outcome, merchant: found.match.name };
+              notes.push(`Identified the store as “${found.match.name}” from the receipt details.`);
+            }
+          } catch {
+            /* reverse search is best-effort */
+          }
         }
 
         // Replay everything learned from previous corrections.

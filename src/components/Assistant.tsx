@@ -4,6 +4,7 @@ import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
 import { answerLocally, askLLM, newMessage } from '../lib/assistant';
 import { answerMemoryCommand, parseMemoryCommand } from '../lib/memory';
 import { askBackend, hasBackend } from '../lib/api';
+import { BRAND } from '../lib/brand';
 
 const SUGGESTIONS = [
   'How much did I spend this month?',
@@ -31,7 +32,7 @@ export function Assistant({
   const [messages, setMessages] = useState<ChatMessage[]>([
     newMessage(
       'assistant',
-      "Hi! I'm your spending assistant. Ask me about your receipts — totals, items, merchants, or dates. Tell me to \u201cremember\u2026\u201d and I'll keep it in mind for next time. Everything is answered on your device; add an LLM endpoint in Settings for open-ended questions.",
+      `Hi! I'm ${BRAND.assistant}, your receipt assistant. Ask me to find anything in your receipts — items, prices, merchants, totals or dates. Tell me to \u201cremember\u2026\u201d and I'll keep it in mind for next time. Everything is answered on your device; add an LLM endpoint in Settings for open-ended questions.`,
     ),
   ]);
   const [input, setInput] = useState('');

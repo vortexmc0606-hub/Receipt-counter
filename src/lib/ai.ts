@@ -3,6 +3,7 @@ import { CATEGORIES } from '../types';
 import { loadBitmap } from './ocr';
 import { categorize } from './category';
 import { recognizeStore } from './stores';
+import { redactText, describeRedactions } from './redact';
 import { resolveTax } from './tax';
 import { normalizeISODate, todayISO } from './dates';
 
@@ -165,6 +166,8 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   const model = settings.visionModel.trim() || settings.llmModel.trim();
   if (!model) throw new Error('Set a vision model in Settings before using AI reading.');
 
+  // The caller redacts the image before it reaches here; this guard keeps the
+  // reader safe if it is called directly with an un-redacted photo.
   const dataUrl = await toDataUrl(file);
 
   const res = await fetch(chatUrl(settings.llmBaseUrl), {
@@ -240,6 +243,15 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   // Map the printed store to its canonical name so spending groups by brand.
   const merchant = recognizeStore(merchantRaw, items).name;
 
+  // Store the receipt text with any personal data removed, so a saved receipt
+  // never keeps a card number or address.
+  const textRedaction = settings.redactPersonal ? redactText(content) : null;
+  const storedText = textRedaction ? textRedaction.text : content;
+  if (textRedaction) {
+    const summary = describeRedactions(textRedaction.counts);
+    if (summary) warnings.push(summary);
+  }
+
   let total = coerceNumber(parsed.total) ?? 0;
 
   // Decide the tax amount from a printed amount, a printed rate, or the gap
@@ -288,7 +300,7 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
     taxRate,
     total: round2(total),
     savings,
-    rawText: content,
+    rawText: storedText,
     warnings,
   };
 }

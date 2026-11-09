@@ -68,7 +68,23 @@ export interface Settings {
   /** Clean up photos (shadow removal, deskew, crop, threshold) before reading. */
   enhanceScan: boolean;
   /**
-   * Base URL of the Receipt Scanner backend. When set, receipt reading and the
+   * Long-edge resolution (px) the scanner works at. Higher reads small receipt
+   * digits more reliably but takes longer. 2600 is the measured sweet spot;
+   * 3200 helps very small or faint prints on a capable device.
+   */
+  scanResolution: number;
+  /**
+   * Remove phone numbers, addresses, person names and card numbers from the
+   * text before it is sent to the AI reader, reverse store search or assistant.
+   */
+  redactPersonal: boolean;
+  /**
+   * When the header is unreadable, ask the AI to identify the store from the
+   * other clues on the receipt (store number, city, slogan) — "reverse search".
+   */
+  reverseStoreSearch: boolean;
+  /**
+   * Base URL of the Lumen backend. When set, receipt reading and the
    * assistant go through the server, which holds the API key — so no key is ever
    * exposed in this browser. Leave empty to run fully on-device.
    */
@@ -98,6 +114,9 @@ export const DEFAULT_SETTINGS: Settings = {
   aiReading: false,
   visionModel: 'openai/gpt-4o-mini',
   enhanceScan: true,
+  scanResolution: 2600,
+  redactPersonal: true,
+  reverseStoreSearch: false,
   apiBaseUrl: '',
   backendSync: false,
   defaultTaxRate: 0,

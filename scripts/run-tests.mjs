@@ -6,13 +6,25 @@
  * build). Usage: `npm test`.
  */
 import { build } from 'esbuild';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const testDir = new URL('./tests/', import.meta.url).pathname;
-const files = readdirSync(testDir).filter((f) => f.endsWith('.test.ts'));
+
+/** Recursively collects *.test.ts files so tests can live in subfolders. */
+function collect(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) found.push(...collect(full));
+    else if (entry.endsWith('.test.ts')) found.push(full);
+  }
+  return found;
+}
+
+const files = collect(testDir);
 
 if (!files.length) {
   console.error('No test files found in scripts/tests.');
@@ -22,7 +34,7 @@ if (!files.length) {
 const out = mkdtempSync(join(tmpdir(), 'rc-tests-'));
 try {
   await build({
-    entryPoints: files.map((f) => join(testDir, f)),
+    entryPoints: files,
     outdir: out,
     bundle: true,
     format: 'esm',

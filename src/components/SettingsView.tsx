@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Bot, Database, Download, Moon, Save, ScanLine, Server, Sparkles, Sun, Upload } from 'lucide-react';
+import { AlertTriangle, Database, Download, Moon, Save, ScanLine, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Upload } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import { HAS_SHARED_KEY } from '../lib/env';
@@ -28,6 +28,7 @@ export function SettingsView({
   const [backendOk, setBackendOk] = useState(false);
   const [locMsg, setLocMsg] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   const patch = (p: Partial<Settings>) => {
@@ -188,46 +189,62 @@ export function SettingsView({
           />
           <span>Clean up photos before reading</span>
         </label>
+        <div className="field" style={{ marginTop: 14 }}>
+          <label>Scan resolution</label>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {[
+              { v: 1800, label: 'Fast' },
+              { v: 2600, label: 'Balanced' },
+              { v: 3200, label: 'Sharp' },
+            ].map((opt) => (
+              <button
+                key={opt.v}
+                className={`btn btn-sm${draft.scanResolution === opt.v ? ' btn-primary' : ''}`}
+                onClick={() => patch({ scanResolution: opt.v })}
+              >
+                {opt.label} · {opt.v}px
+              </button>
+            ))}
+          </div>
+          <p className="tiny muted" style={{ marginTop: 6 }}>
+            Higher resolution reads small receipt digits more reliably but takes a little longer.
+            Balanced (2600px) is the tested sweet spot.
+          </p>
+        </div>
       </div>
 
       <div className="card card-pad">
         <h3 className="section-title">
-          <Server size={16} /> Backend (optional)
+          <ShieldCheck size={16} /> Privacy
         </h3>
         <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
-          Point this app at the Receipt Scanner backend and the server holds the API key — this
-          browser never sees it, and receipts can sync across devices. Leave the URL empty to keep
-          everything on-device.
+          Personal details on a receipt — card numbers, phone numbers, addresses and names — are
+          blacked out of the image and removed from the text before anything is sent to an AI, and
+          are not kept when a receipt is saved.
         </p>
-        <div className="field">
-          <label>Backend URL</label>
-          <input
-            className="input"
-            placeholder="https://your-backend.example.com"
-            value={draft.apiBaseUrl}
-            onChange={(e) => patch({ apiBaseUrl: e.target.value })}
-          />
-        </div>
-        <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 14 }}>
+        <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer' }}>
           <input
             type="checkbox"
-            checked={draft.backendSync}
-            onChange={(e) => patch({ backendSync: e.target.checked })}
+            checked={draft.redactPersonal}
+            onChange={(e) => patch({ redactPersonal: e.target.checked })}
           />
-          <span>Sync receipts with the backend</span>
+          <span>Black out personal details</span>
         </label>
-        {draft.apiBaseUrl.trim() && (
-          <div className="row" style={{ marginTop: 12, gap: 8, alignItems: 'center' }}>
-            <button className="btn btn-sm" onClick={checkBackend} disabled={checking}>
-              {checking ? 'Checking…' : 'Test connection'}
-            </button>
-            {backendMsg && (
-              <span className="tiny muted" style={{ color: backendOk ? undefined : '#c0392b' }}>
-                {backendMsg}
-              </span>
-            )}
-          </div>
-        )}
+        <label
+          className="row"
+          style={{ alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 12 }}
+        >
+          <input
+            type="checkbox"
+            checked={draft.reverseStoreSearch}
+            onChange={(e) => patch({ reverseStoreSearch: e.target.checked })}
+          />
+          <span>Reverse-search the store when the header is unclear</span>
+        </label>
+        <p className="tiny muted" style={{ marginTop: 6 }}>
+          When the store name cannot be read, the AI identifies the chain from the other details on
+          the receipt (store number, city, slogan). Only the blacked-out text is sent.
+        </p>
       </div>
 
       <div className="card card-pad">
@@ -235,8 +252,9 @@ export function SettingsView({
           <Sparkles size={16} /> AI reading
         </h3>
         <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
-          Send the receipt photo to a vision model for a much more accurate read. Uses the endpoint and
-          key below. When this is off, reading happens on your device with OCR.
+          {HAS_SHARED_KEY
+            ? 'This app is set up with a shared connection, so AI reading works out of the box. No key is needed.'
+            : 'When on, the receipt photo is sent to the app\u2019s AI service for a much more accurate read. Personal details are blacked out first. When off, reading happens on your device.'}
         </p>
         <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer' }}>
           <input
@@ -246,99 +264,10 @@ export function SettingsView({
           />
           <span>Read receipts with AI</span>
         </label>
-        <div className="field" style={{ marginTop: 14 }}>
-          <label>Vision model</label>
-          <input
-            className="input"
-            placeholder="openai/gpt-4o-mini"
-            value={draft.visionModel}
-            onChange={(e) => patch({ visionModel: e.target.value })}
-          />
-          <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'openai/gpt-4o-mini' })}>
-              GPT-4o mini
-            </button>
-            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'openai/gpt-4o' })}>
-              GPT-4o
-            </button>
-            <button className="btn btn-sm" onClick={() => patch({ visionModel: 'google/gemini-3.8-flash' })}>
-              Gemini Flash
-            </button>
-            <button
-              className="btn btn-sm"
-              onClick={() => patch({ visionModel: 'anthropic/claude-sonnet-5.5' })}
-            >
-              Claude Sonnet
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="card card-pad">
-        <h3 className="section-title">
-          <Bot size={16} /> Assistant (optional LLM)
-        </h3>
-        <p className="tiny muted" style={{ marginTop: -6, marginBottom: 14 }}>
-          {HAS_SHARED_KEY
-            ? 'This app is set up with a shared connection, so scanning works out of the box. No key is needed.'
-            : 'The assistant works offline for common questions. Add an OpenAI-compatible endpoint to answer free-form questions. The key is stored only in this browser and sent directly to your endpoint.'}
-        </p>
-        {HAS_SHARED_KEY ? (
-          <div className="alert alert-info" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={16} /> Using the app's shared connection. Nothing to configure.
-          </div>
-        ) : (
-          <>
-        <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-sm"
-            onClick={() =>
-              patch({
-                llmBaseUrl: 'https://openrouter.ai/api/v1',
-                llmModel: draft.llmModel || 'openai/gpt-4o-mini',
-              })
-            }
-          >
-            Use OpenRouter
-          </button>
-          <button
-            className="btn btn-sm"
-            onClick={() => patch({ llmBaseUrl: 'https://api.openai.com/v1', llmModel: 'gpt-4o-mini' })}
-          >
-            Use OpenAI
-          </button>
-        </div>
-        <div className="grid" style={{ gap: 14 }}>
-          <div className="field">
-            <label>Base URL</label>
-            <input
-              className="input"
-              placeholder="https://api.openai.com/v1"
-              value={draft.llmBaseUrl}
-              onChange={(e) => patch({ llmBaseUrl: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>Model</label>
-            <input
-              className="input"
-              placeholder="gpt-4o-mini"
-              value={draft.llmModel}
-              onChange={(e) => patch({ llmModel: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>API key</label>
-            <input
-              className="input"
-              type="password"
-              placeholder="sk-…"
-              value={draft.llmApiKey}
-              onChange={(e) => patch({ llmApiKey: e.target.value })}
-            />
-          </div>
-        </div>
-          </>
+        {!HAS_SHARED_KEY && (
+          <p className="tiny muted" style={{ marginTop: 8 }}>
+            AI reading needs a connection. Add one under <strong>Advanced</strong> below.
+          </p>
         )}
       </div>
 
@@ -398,6 +327,148 @@ export function SettingsView({
         <button className="btn btn-primary" onClick={save} style={{ justifySelf: 'start' }}>
           <Save size={16} /> {saved ? 'Saved!' : 'Save settings'}
         </button>
+      </div>
+
+      <div className="card card-pad" style={{ gridColumn: '1 / -1' }}>
+        <button
+          className="row"
+          onClick={() => setShowAdvanced((v) => !v)}
+          style={{
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            background: 'none',
+            border: 0,
+            cursor: 'pointer',
+            padding: 0,
+            color: 'inherit',
+          }}
+          aria-expanded={showAdvanced}
+        >
+          <SlidersHorizontal size={16} />
+          <strong style={{ fontSize: 14 }}>Advanced</strong>
+          <span className="muted tiny">— connections, endpoints and keys</span>
+          <span className="spacer" />
+          <span className="muted tiny">{showAdvanced ? 'Hide' : 'Show'}</span>
+        </button>
+
+        {showAdvanced && (
+          <div className="grid" style={{ gap: 16, marginTop: 16 }}>
+            <div className="alert alert-info">
+              <ShieldCheck size={16} />
+              <div>
+                These are for advanced setups only. Most people never need to change them — the app
+                already ships with a working connection.
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ margin: '0 0 6px', fontSize: 14 }}>Backend (optional)</h4>
+              <p className="tiny muted" style={{ marginTop: 0, marginBottom: 12 }}>
+                Point the app at its backend and the server holds the API key — this browser never sees
+                it, and receipts can sync across devices.
+              </p>
+              <div className="field">
+                <label>Backend URL</label>
+                <input
+                  className="input"
+                  placeholder="https://your-backend.example.com"
+                  value={draft.apiBaseUrl}
+                  onChange={(e) => patch({ apiBaseUrl: e.target.value })}
+                />
+              </div>
+              <label className="row" style={{ alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={draft.backendSync}
+                  onChange={(e) => patch({ backendSync: e.target.checked })}
+                />
+                <span>Sync receipts with the backend</span>
+              </label>
+              {draft.apiBaseUrl.trim() && (
+                <div className="row" style={{ marginTop: 12, gap: 8, alignItems: 'center' }}>
+                  <button className="btn btn-sm" onClick={checkBackend} disabled={checking}>
+                    {checking ? 'Checking…' : 'Test connection'}
+                  </button>
+                  {backendMsg && (
+                    <span className="tiny muted" style={{ color: backendOk ? undefined : '#c0392b' }}>
+                      {backendMsg}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h4 style={{ margin: '0 0 6px', fontSize: 14 }}>Assistant &amp; AI connection</h4>
+              <p className="tiny muted" style={{ marginTop: 0, marginBottom: 12 }}>
+                {HAS_SHARED_KEY
+                  ? 'A shared connection is already configured. Leave these as they are unless you want your own.'
+                  : 'Add an OpenAI-compatible endpoint so the assistant can answer free-form questions. The key is stored only in this browser.'}
+              </p>
+              {!HAS_SHARED_KEY && (
+                <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() =>
+                      patch({
+                        llmBaseUrl: 'https://openrouter.ai/api/v1',
+                        llmModel: draft.llmModel || 'openai/gpt-4o-mini',
+                      })
+                    }
+                  >
+                    Use OpenRouter
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => patch({ llmBaseUrl: 'https://api.openai.com/v1', llmModel: 'gpt-4o-mini' })}
+                  >
+                    Use OpenAI
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-2" style={{ gap: 14 }}>
+                <div className="field">
+                  <label>Base URL</label>
+                  <input
+                    className="input"
+                    placeholder="https://api.openai.com/v1"
+                    value={draft.llmBaseUrl}
+                    onChange={(e) => patch({ llmBaseUrl: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Model</label>
+                  <input
+                    className="input"
+                    placeholder="gpt-4o-mini"
+                    value={draft.llmModel}
+                    onChange={(e) => patch({ llmModel: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>API key</label>
+                  <input
+                    className="input"
+                    type="password"
+                    placeholder="sk-…"
+                    value={draft.llmApiKey}
+                    onChange={(e) => patch({ llmApiKey: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Vision model</label>
+                  <input
+                    className="input"
+                    placeholder="openai/gpt-4o-mini"
+                    value={draft.visionModel}
+                    onChange={(e) => patch({ visionModel: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {confirmClear && (

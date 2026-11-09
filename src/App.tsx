@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Brain, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
+import { BarChart3, Brain, Info, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
 import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
@@ -34,8 +34,10 @@ import {
 import { Assistant } from './components/Assistant';
 import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
+import { Credits } from './components/Credits';
+import { BRAND } from './lib/brand';
 
-type Tab = 'dashboard' | 'scan' | 'receipts' | 'trends' | 'stores' | 'assistant' | 'learning' | 'settings';
+type Tab = 'dashboard' | 'scan' | 'receipts' | 'trends' | 'stores' | 'assistant' | 'learning' | 'settings' | 'about';
 
 const TABS: { id: Tab; label: string; icon: typeof ScanLine }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -43,9 +45,10 @@ const TABS: { id: Tab; label: string; icon: typeof ScanLine }[] = [
   { id: 'receipts', label: 'Receipts', icon: ReceiptText },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
   { id: 'stores', label: 'Stores', icon: StoreIcon },
-  { id: 'assistant', label: 'Assistant', icon: Sparkles },
+  { id: 'assistant', label: BRAND.assistant, icon: Sparkles },
   { id: 'learning', label: 'Learning', icon: Brain },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  { id: 'about', label: 'About', icon: Info },
 ];
 
 export default function App() {
@@ -187,8 +190,8 @@ export default function App() {
         <div className="brand">
           <span className="brand-badge"><ReceiptText size={19} /></span>
           <span className="brand-lockup">
-            <span className="brand-text">Receiptly</span>
-            <span className="brand-caption">SMART EXPENSES</span>
+            <span className="brand-text">{BRAND.product}</span>
+            <span className="brand-caption">RECEIPT INTELLIGENCE</span>
           </span>
         </div>
         <div className="sidebar-label">WORKSPACE</div>
@@ -211,7 +214,7 @@ export default function App() {
             <div><strong>Your data, your device</strong><span>Private by design</span></div>
             <span className="privacy-dot" />
           </div>
-          <div className="sidebar-footer">RECEIPTLY <span>•</span> PERSONAL FINANCE</div>
+          <div className="sidebar-footer">{BRAND.product.toUpperCase()} <span>•</span> BY {BRAND.maker.toUpperCase()}</div>
         </div>
       </aside>
 
@@ -219,7 +222,7 @@ export default function App() {
         <header className="topbar">
           <div className="mobile-brand">
             <span className="brand-badge"><ReceiptText size={18} /></span>
-            <span className="brand-text">Receiptly</span>
+            <span className="brand-text">{BRAND.product}</span>
           </div>
           <div className="topbar-heading">
             <span className="topbar-kicker">YOUR WORKSPACE</span>
@@ -259,6 +262,7 @@ export default function App() {
           {tab === 'settings' && <SettingsView settings={settings} onSave={persistSettings}
             onExport={async () => download(`receipts-backup-${todayISO()}.json`, await exportJSON())}
             onImport={handleImport} onClearAll={handleClearAll} />}
+          {tab === 'about' && <Credits />}
         </main>
       </section>
     </div>
