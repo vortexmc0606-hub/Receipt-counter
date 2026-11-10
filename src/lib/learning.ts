@@ -133,9 +133,10 @@ export interface AppliedLearning {
 }
 
 /**
- * Replays everything learned onto a freshly parsed receipt: renames/reclassifies
- * known lines, drops known junk lines, and applies token fixes. Also fills in a
- * tax amount when the receipt shows a tax line but no readable figure.
+ * Replays safe corrections onto a freshly parsed receipt: renames/reclassifies
+ * known lines, drops known junk lines, and applies token fixes. Historical item
+ * prices are never replayed because the current transaction is authoritative.
+ * Also fills in a tax amount when the receipt shows a tax line but no readable figure.
  */
 export function applyLearning(
   parsed: ParsedReceipt,
@@ -170,10 +171,9 @@ export function applyLearning(
         applied.push(`Remembered "${next.name}" → "${learned.name}"`);
         next = { ...next, name: learned.name };
       }
-      if (learned.price !== undefined && Math.abs(learned.price - next.price) > 0.001) {
-        applied.push(`Remembered price ${next.price} → ${learned.price} for "${next.name}"`);
-        next = { ...next, price: learned.price };
-      }
+      // A learned price is historical evidence, not the price on this receipt.
+      // Promotions, package sizes, regional pricing and inflation can all change
+      // it, so always preserve the amount OCR read from the current transaction.
       if (learned.category && learned.category !== next.category) {
         next = { ...next, category: learned.category };
       }
