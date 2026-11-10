@@ -1,6 +1,6 @@
 import type { ParsedReceipt } from './parser';
 import type { Category, Receipt, ReceiptItem } from '../types';
-import { recognizeStore, storeKind, type StoreKind } from './stores';
+import { recognizeStore, storeKind, STORE_CATALOG, type StoreKind } from './stores';
 import { hasTaxLabel, rateFromAmounts, round2, taxFromRate } from './tax';
 
 /**
@@ -125,6 +125,38 @@ export function applyTokenFixes(name: string, fixes: TokenFix[]): string {
       return hit ?? part;
     })
     .join('');
+}
+
+/**
+ * Adds the bundled training-spec store catalog to the on-device IndexedDB
+ * learning store. Existing user-created mappings always win; catalog entries
+ * are only inserted when their normalized header is not already present.
+ * Catalog rows use count/lastSeen = 0 so they are not mistaken for receipts
+ * the user has personally corrected or seen.
+ */
+export function seedTrainingStoreCatalog(data: LearningData): LearningData {
+  const stores = (data.stores ?? []).map((store) => ({ ...store }));
+  const knownHeaders = new Set(stores.map((store) => normalizeName(store.from)));
+  let changed = false;
+
+  for (const definition of STORE_CATALOG) {
+    const headers = [definition.name, ...(definition.aliases ?? [])];
+    for (const header of headers) {
+      const from = normalizeName(header);
+      if (from.length < 3 || knownHeaders.has(from)) continue;
+      stores.push({
+        from,
+        name: definition.name,
+        kind: definition.kind,
+        count: 0,
+        lastSeen: 0,
+      });
+      knownHeaders.add(from);
+      changed = true;
+    }
+  }
+
+  return changed ? { ...data, stores } : data;
 }
 
 export interface AppliedLearning {
