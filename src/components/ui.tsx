@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useCountUp, useTilt } from '../lib/motion';
 
 export function Modal({
   title,
@@ -14,10 +15,21 @@ export function Modal({
   footer?: ReactNode;
   wide?: boolean;
 }) {
+  // Close on Escape for a proper dialog feel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="modal"
+        role="dialog"
+        aria-modal="true"
         style={wide ? { maxWidth: 900 } : undefined}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -35,24 +47,36 @@ export function Modal({
   );
 }
 
+/**
+ * A stat tile. When `numeric` is given the value counts up on mount; otherwise
+ * the preformatted `value` string is shown as-is.
+ */
 export function Stat({
   label,
   value,
   sub,
   icon,
+  numeric,
+  format,
 }: {
   label: string;
   value: string;
   sub?: string;
   icon?: ReactNode;
+  numeric?: number;
+  format?: (n: number) => string;
 }) {
+  const tiltRef = useTilt<HTMLDivElement>(4);
+  const animated = useCountUp(numeric ?? 0);
+  const display = numeric !== undefined && format ? format(animated) : value;
+
   return (
-    <div className="card stat">
+    <div className="card stat" ref={tiltRef}>
       <div className="stat-label">
         {icon}
         {label}
       </div>
-      <div className="stat-value">{value}</div>
+      <div className="stat-value">{display}</div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
   );
@@ -75,3 +99,27 @@ export function Empty({
     </div>
   );
 }
+
+/** Animates a plain number into view; used for inline counters. */
+export function CountUp({
+  value,
+  format,
+}: {
+  value: number;
+  format: (n: number) => string;
+}) {
+  const n = useCountUp(value);
+  return <>{format(n)}</>;
+}
+
+/** A one-shot flash used to confirm a copied/updated value. */
+export function useFlash(ms = 900): [boolean, () => void] {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) return;
+    const t = window.setTimeout(() => setOn(false), ms);
+    return () => window.clearTimeout(t);
+  }, [on, ms]);
+  return [on, () => setOn(true)];
+}
+

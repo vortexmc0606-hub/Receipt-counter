@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Backend for the Receipt Scanner app: holds the LLM key, reads receipts, answers questions and stores receipts.",
+  "description": "Backend for the Lumen app: holds the LLM key, reads receipts, answers questions and stores receipts.",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",

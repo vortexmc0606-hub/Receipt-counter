@@ -30,7 +30,7 @@ import {
 import { todayISO } from '../lib/dates';
 import { Empty, Stat } from './ui';
 
-const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#84cc16', '#64748b'];
+const COLORS = ['#176bff', '#00a3ff', '#00e5ff', '#5b8def', '#7c5cff', '#2ee6a6', '#ffb84d', '#ff5d73', '#8ea6d6'];
 
 export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currency: string }) {
   const stats = useMemo(() => {
@@ -62,12 +62,12 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
 
   return (
     <div className="grid">
-      <div className="grid grid-stats">
-        <Stat label="Total spent" value={money(stats.total, currency)} sub={`${stats.count} receipts`} icon={<Wallet size={13} />} />
-        <Stat label="This month" value={money(stats.monthTotal, currency)} sub={monthLabel(monthKey(todayISO()))} icon={<TrendingUp size={13} />} />
-        <Stat label="Avg. receipt" value={money(stats.avg, currency)} sub={`${stats.itemCount} items tracked`} icon={<CreditCard size={13} />} />
-        <Stat label="Days with spend" value={String(stats.days)} sub="distinct dates" icon={<CalendarDays size={13} />} />
-        <Stat label="Total saved" value={money(stats.savings, currency)} sub="from discounts & coupons" icon={<PiggyBank size={13} />} />
+      <div className="grid grid-stats stagger">
+        <Stat label="Total spent" value={money(stats.total, currency)} numeric={stats.total} format={(n) => money(n, currency)} sub={`${stats.count} receipts`} icon={<Wallet size={13} />} />
+        <Stat label="This month" value={money(stats.monthTotal, currency)} numeric={stats.monthTotal} format={(n) => money(n, currency)} sub={monthLabel(monthKey(todayISO()))} icon={<TrendingUp size={13} />} />
+        <Stat label="Avg. receipt" value={money(stats.avg, currency)} numeric={stats.avg} format={(n) => money(n, currency)} sub={`${stats.itemCount} items tracked`} icon={<CreditCard size={13} />} />
+        <Stat label="Days with spend" value={String(stats.days)} numeric={stats.days} format={(n) => String(Math.round(n))} sub="distinct dates" icon={<CalendarDays size={13} />} />
+        <Stat label="Total saved" value={money(stats.savings, currency)} numeric={stats.savings} format={(n) => money(n, currency)} sub="from discounts & coupons" icon={<PiggyBank size={13} />} />
       </div>
 
       <div className="card card-pad">
@@ -88,9 +88,9 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
               <YAxis tick={{ fontSize: 11, fill: 'var(--text-3)' }} axisLine={false} tickLine={false} />
               <Tooltip
                 contentStyle={{
-                  background: 'var(--surface)',
+                  background: 'var(--surface-solid)',
                   border: '1px solid var(--border)',
-                  borderRadius: 9,
+                  borderRadius: 12,
                   fontSize: 12.5,
                   color: 'var(--text)',
                 }}
@@ -124,9 +124,9 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
                 <Tooltip
                   formatter={(v: number) => money(v, currency)}
                   contentStyle={{
-                    background: 'var(--surface)',
+                    background: 'var(--surface-solid)',
                     border: '1px solid var(--border)',
-                    borderRadius: 9,
+                    borderRadius: 12,
                     fontSize: 12.5,
                     color: 'var(--text)',
                   }}
@@ -152,9 +152,9 @@ export function Dashboard({ receipts, currency }: { receipts: Receipt[]; currenc
                 <Tooltip
                   formatter={(v: number) => money(v, currency)}
                   contentStyle={{
-                    background: 'var(--surface)',
+                    background: 'var(--surface-solid)',
                     border: '1px solid var(--border)',
-                    borderRadius: 9,
+                    borderRadius: 12,
                     fontSize: 12.5,
                     color: 'var(--text)',
                   }}

@@ -16,12 +16,12 @@ import { storeFor } from '../lib/learning';
 import { money, prettyDate, receiptTotal, storeTotals, type StoreTotal } from '../lib/utils';
 import { Empty } from './ui';
 
-const COLORS = ['#2563eb', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#ef4444', '#84cc16', '#64748b', '#0ea5e9'];
+const COLORS = ['#176bff', '#00a3ff', '#00e5ff', '#5b8def', '#7c5cff', '#2ee6a6', '#ffb84d', '#ff5d73', '#8ea6d6', '#3dd6ff'];
 
 const tooltipStyle = {
-  background: 'var(--surface)',
+  background: 'var(--surface-solid)',
   border: '1px solid var(--border)',
-  borderRadius: 9,
+  borderRadius: 12,
   fontSize: 12.5,
   color: 'var(--text)',
 } as const;

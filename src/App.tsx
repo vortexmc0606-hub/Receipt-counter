@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Brain, Info, Loader2, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
+import { BarChart3, Brain, Info, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
 import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
@@ -35,6 +35,8 @@ import { Assistant } from './components/Assistant';
 import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
 import { Credits } from './components/Credits';
+import { Background } from './components/Background';
+import { useToast } from './components/Toast';
 import { BRAND } from './lib/brand';
 
 type Tab = 'dashboard' | 'scan' | 'receipts' | 'trends' | 'stores' | 'assistant' | 'learning' | 'settings' | 'about';
@@ -58,6 +60,7 @@ export default function App() {
   const [learning, setLearning] = useState<LearningData>(EMPTY_LEARNING);
   const [memory, setMemory] = useState<MemoryFact[]>([]);
   const [loading, setLoading] = useState(true);
+  const { notify } = useToast();
 
   const refresh = useCallback(async () => {
     setReceipts(await getAllReceipts());
@@ -112,8 +115,9 @@ export default function App() {
       }
       await refresh();
       setTab('receipts');
+      notify('Receipt saved');
     },
-    [refresh, learning, settings],
+    [refresh, learning, settings, notify],
   );
 
   const removeReceipt = useCallback(
@@ -123,8 +127,9 @@ export default function App() {
         void deleteBackendReceipt(id, settings).catch(() => undefined);
       }
       await refresh();
+      notify('Receipt deleted', 'info');
     },
-    [refresh, settings],
+    [refresh, settings, notify],
   );
 
   const persistSettings = useCallback(async (next: Settings) => {
@@ -175,25 +180,40 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', height: '100%' }}>
-        <div style={{ textAlign: 'center', color: 'var(--text-2)' }}>
-          <Loader2 size={30} className="spin" style={{ color: 'var(--primary)' }} />
-          <p className="tiny">Loading your receipts…</p>
+      <>
+        <Background />
+        <div className="boot">
+          <div className="boot-inner">
+            <div className="boot-orb">
+              <ReceiptText size={38} />
+            </div>
+            <div className="brand-lockup" style={{ alignItems: 'center' }}>
+              <span className="brand-text" style={{ fontSize: 26 }}>
+                {BRAND.product}
+              </span>
+              <span className="brand-caption">{BRAND.tagline}</span>
+            </div>
+            <div className="boot-bar">
+              <i />
+            </div>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="app app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-badge"><ReceiptText size={19} /></span>
-          <span className="brand-lockup">
-            <span className="brand-text">{BRAND.product}</span>
-            <span className="brand-caption">RECEIPT INTELLIGENCE</span>
-          </span>
-        </div>
+    <>
+      <Background />
+      <div className="app app-shell">
+        <aside className="sidebar">
+          <div className="brand">
+            <span className="brand-badge"><ReceiptText size={19} /></span>
+            <span className="brand-lockup">
+              <span className="brand-text">{BRAND.product}</span>
+              <span className="brand-caption">RECEIPT INTELLIGENCE</span>
+            </span>
+          </div>
         <div className="sidebar-label">WORKSPACE</div>
         <nav className="nav sidebar-nav" aria-label="Main navigation">
           {TABS.map((t) => {
@@ -239,32 +259,35 @@ export default function App() {
           </button>
         </header>
 
-        <main className="main">
-          {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
-          {tab === 'scan' && (
-            <ScanView
-              currency={settings.currency}
-              settings={settings}
-              learning={learning}
-              onSave={saveReceipt}
-              onLocation={(loc) => {
-                if (loc && JSON.stringify(loc) !== JSON.stringify(settings.location)) {
-                  void persistSettings({ ...settings, location: loc });
-                }
-              }}
-            />
-          )}
-          {tab === 'receipts' && <ReceiptsView receipts={receipts} currency={settings.currency} onDelete={removeReceipt} onExportCSV={handleExportCSV} />}
-          {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} memory={memory} onMemoryChange={updateMemory} />}
-          {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
-          {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
-          {tab === 'learning' && <LearningView data={learning} onImport={handleImportLearning} onClear={handleClearLearning} />}
-          {tab === 'settings' && <SettingsView settings={settings} onSave={persistSettings}
-            onExport={async () => download(`receipts-backup-${todayISO()}.json`, await exportJSON())}
-            onImport={handleImport} onClearAll={handleClearAll} />}
-          {tab === 'about' && <Credits />}
+        <main className="main" key={tab}>
+          <div className="page-enter">
+            {tab === 'dashboard' && <Dashboard receipts={receipts} currency={settings.currency} />}
+            {tab === 'scan' && (
+              <ScanView
+                currency={settings.currency}
+                settings={settings}
+                learning={learning}
+                onSave={saveReceipt}
+                onLocation={(loc) => {
+                  if (loc && JSON.stringify(loc) !== JSON.stringify(settings.location)) {
+                    void persistSettings({ ...settings, location: loc });
+                  }
+                }}
+              />
+            )}
+            {tab === 'receipts' && <ReceiptsView receipts={receipts} currency={settings.currency} onDelete={removeReceipt} onExportCSV={handleExportCSV} />}
+            {tab === 'assistant' && <Assistant receipts={receipts} settings={settings} memory={memory} onMemoryChange={updateMemory} />}
+            {tab === 'trends' && <Trends receipts={receipts} currency={settings.currency} />}
+            {tab === 'stores' && <Stores receipts={receipts} learning={learning} currency={settings.currency} />}
+            {tab === 'learning' && <LearningView data={learning} onImport={handleImportLearning} onClear={handleClearLearning} />}
+            {tab === 'settings' && <SettingsView settings={settings} onSave={persistSettings}
+              onExport={async () => download(`receipts-backup-${todayISO()}.json`, await exportJSON())}
+              onImport={handleImport} onClearAll={handleClearAll} />}
+            {tab === 'about' && <Credits />}
+          </div>
         </main>
       </section>
     </div>
+    </>
   );
 }

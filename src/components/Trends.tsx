@@ -14,9 +14,9 @@ import { itemTrends, money, prettyDate, type ItemTrend } from '../lib/utils';
 import { Empty } from './ui';
 
 const chartTooltip = {
-  background: 'var(--surface)',
+  background: 'var(--surface-solid)',
   border: '1px solid var(--border)',
-  borderRadius: 9,
+  borderRadius: 12,
   fontSize: 12.5,
   color: 'var(--text)',
 } as const;

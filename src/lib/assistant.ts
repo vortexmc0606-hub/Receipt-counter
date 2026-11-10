@@ -324,7 +324,7 @@ export async function askLLM(
     ? ['', 'THINGS THE USER ASKED YOU TO REMEMBER:', formatMemory(memory)]
     : [];
   const system = [
-    'You are a helpful personal-finance assistant embedded in a receipt-scanner app.',
+    'You are a helpful personal-finance assistant embedded in the Lumen receipt app.',
     'Answer only from the receipt data provided. Be concise and concrete.',
     `Currency symbol: ${settings.currency}.`,
     'If the user asks for a list or comparison, respond with a short sentence followed by a markdown table.',

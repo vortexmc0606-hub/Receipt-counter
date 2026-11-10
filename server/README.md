@@ -1,6 +1,6 @@
-# Receipt Scanner — Backend
+# Lumen — Backend
 
-A small Node/Express service for the Receipt Scanner app. It does two jobs:
+A small Node/Express service for the Lumen app. It does two jobs:
 
 1. **Holds the LLM API key.** The browser sends the receipt image or a question to
    this server; the server calls the model provider. The key never ships to the

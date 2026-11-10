@@ -3,7 +3,7 @@ import { loadBitmap } from './ocr';
 import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
 
 /**
- * Client for the Receipt Scanner backend.
+ * Client for the Lumen backend.
  *
  * The backend holds the LLM API key, so when it is configured the browser never
  * sees a key: it sends the receipt image or a question to our server and the

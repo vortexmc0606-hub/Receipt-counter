@@ -117,3 +117,35 @@ Prefer real code paths over mocks.
   then `git push origin main`, then reset the remote to the plain URL. Never commit the token.
 - Never force-push. Keep commits small and descriptive.
 
+
+## UI system — Volt Blue (Lumen)
+
+The interface is a single stylesheet (`src/styles.css`) organised in numbered
+sections: tokens, background, shell, top bar, cards, buttons, forms, tables,
+chips, scan, chat, modal, empty/alerts, trends, stores, motion, toasts,
+loading, responsive, accessibility, then **section 29 Liquid Glass refinement**.
+
+Key conventions:
+- **Palette tokens** live in `:root` (`--volt`, `--neon`, `--plasma`, `--bg`,
+  `--glass-*`, `--crystal-*`). Light mode is `[data-theme='light']`. Chart code
+  still reads the compatibility alias `--border`.
+- **Glass tiers** (section 29): `--glass-nav` (rail/topbar), `--glass-card`
+  (cards), `--glass-modal` (dialogs/toasts), `--glass-float` (chips/buttons).
+  Reusable base class is `.glass-crystal` with `.tier-nav/-modal/-float`.
+  Keep fills low-alpha; readability comes from near-white text + a 1px text
+  shadow on `.card-pad`/`.modal-body`, not from opaque fills.
+- **Motion** lives in `src/lib/motion.ts`: `useCountUp`, `useTilt` (writes
+  `--gx`/`--gy` for pointer-follow light + a small rotate), `useReveal`,
+  `prefersReducedMotion`. All motion is transform/opacity only and gated on
+  `prefers-reduced-motion`.
+- **Background** is `src/components/Background.tsx`: aurora blobs (CSS),
+  grid, sweep, vignette, and a canvas particle field that pauses on tab hide.
+- **Notifications**: `ToastProvider` in `src/components/Toast.tsx`; call
+  `useToast().notify(msg, kind)`.
+- **Page transitions**: wrap tab content in `.page-enter`; the `.main` element
+  carries `key={tab}` so each switch replays the animation. `.main > .page-enter`
+  participates in the max-width centring rule.
+- Store avatar colours and chart palettes are volt blues in `Dashboard.tsx`
+  and `Stores.tsx` (`COLORS`).
+
+Do not change the IndexedDB name `receipt-scanner` (existing users' data).
