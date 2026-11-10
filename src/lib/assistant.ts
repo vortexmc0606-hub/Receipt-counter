@@ -11,6 +11,7 @@ import {
 import { uid } from './parser';
 import { addDays, endOfMonth, todayISO } from './dates';
 import { formatMemory } from './memory';
+import { HttpError, describeHttpError, isRetryable, withRetry } from './net';
 
 export interface AssistantAnswer {
   content: string;
@@ -340,26 +341,31 @@ export async function askLLM(
     { role: 'user', content: question },
   ];
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
-    },
-    body: JSON.stringify({ model: settings.llmModel, messages, temperature: 0.2 }),
-  });
+  const request = async (): Promise<string> => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
+      },
+      body: JSON.stringify({ model: settings.llmModel, messages, temperature: 0.2 }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`LLM request failed (${res.status}). ${body.slice(0, 200)}`);
-  }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new HttpError(res.status, describeHttpError(res.status, body));
+    }
 
-  const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    const json = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const content = json.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error('The model returned an empty response.');
+    return content;
   };
-  const content = json.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error('The model returned an empty response.');
-  return { content };
+
+  // One retry smooths over a transient gateway blip so a question is not lost.
+  return { content: await withRetry(request, { retries: 1, shouldRetry: (e) => e instanceof HttpError && isRetryable(e.status) }) };
 }
 
 export function newMessage(role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}): ChatMessage {

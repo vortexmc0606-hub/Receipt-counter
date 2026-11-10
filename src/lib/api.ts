@@ -1,5 +1,6 @@
 import type { AiReadResult } from './ai';
 import { loadBitmap } from './ocr';
+import { HttpError, describeHttpError, isRetryable, withRetry } from './net';
 import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
 
 /**
@@ -33,7 +34,8 @@ async function req<T>(settings: Settings, path: string, init?: RequestInit): Pro
       headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     });
   } catch (err) {
-    throw new Error(
+    throw new HttpError(
+      0,
       err instanceof DOMException && err.name === 'AbortError'
         ? 'The server took too long to respond.'
         : 'Could not reach the server.',
@@ -52,13 +54,8 @@ async function req<T>(settings: Settings, path: string, init?: RequestInit): Pro
     /* non-JSON body (proxy/HTML error page) */
   }
   if (!res.ok) {
-    const message =
-      typeof json.error === 'string'
-        ? json.error
-        : res.status === 502 || res.status === 504
-          ? 'The server is unavailable right now.'
-          : `Request failed (${res.status}).`;
-    throw new Error(message);
+    const fromBody = typeof json.error === 'string' ? json.error : text;
+    throw new HttpError(res.status, describeHttpError(res.status, fromBody));
   }
   return json as T;
 }
@@ -92,11 +89,10 @@ export async function backendStatus(settings: Settings): Promise<BackendStatus> 
 /** Reads a receipt image through the backend (which holds the API key). */
 export async function readReceiptViaBackend(file: Blob, settings: Settings): Promise<AiReadResult> {
   const image = await toDataUrl(file);
-  const result = await req<AiReadResult>(settings, '/api/parse', {
-    method: 'POST',
-    body: JSON.stringify({ image }),
-  });
-  return result;
+  return withRetry(
+    () => req<AiReadResult>(settings, '/api/parse', { method: 'POST', body: JSON.stringify({ image }) }),
+    { retries: 1, shouldRetry: (e) => e instanceof HttpError && isRetryable(e.status) },
+  );
 }
 
 /** Asks the assistant a question, with receipt data supplied by the client. */

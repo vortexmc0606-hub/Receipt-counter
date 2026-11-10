@@ -97,7 +97,6 @@ node /tmp/test.bundle.mjs
 Prefer real code paths over mocks.
 
 ## OCR and parsing notes (measured, not guessed)
-
 - **Page-segmentation mode matters more than preprocessing.** Measured mean word confidence over 10
   receipt photos: `SINGLE_BLOCK` (Tesseract's default, and what the app used originally) scores
   39–49, while `AUTO`/`SINGLE_COLUMN`/`SPARSE_TEXT` score 58–63. `recognizeReceiptPasses()` therefore
@@ -108,6 +107,20 @@ Prefer real code paths over mocks.
   `NON_ITEM` is anchored to line start, so `SUMMARY_ANYWHERE`/`TOTAL_LINE` catch these anywhere.
 - **Receipts are recent documents.** `parseReceiptDate` scores candidates and rejects dates years in the
   past or future, so a phone number or SKU that looks date-like cannot win over the real date.
+
+## AI / networking notes
+
+- **Remote AI goes through `src/lib/net.ts`.** `HttpError` carries the status, `describeHttpError`
+  turns failures into short actionable text, and `isRetryable`/`withRetry` retry transient
+  failures (408/429/5xx) only. The direct vision read (`ai.ts`), the Beam assistant
+  (`assistant.ts`), and the backend client (`api.ts`) all use these, so a gateway 502 no
+  longer surfaces as a raw "bad gateway" string.
+- **The vision read retries with a smaller image** before giving up: full-size, then full-size
+  again after a short delay, then 1100px — an oversized photo can still read.
+- **Endpoint config:** the deployed build uses OpenRouter (`openrouter.ai/api/v1`) with
+  `openai/gpt-4o-mini` as the vision model, keyed by the `VITE_LLM_API_KEY` repo secret. The
+  key is baked into the bundle for the static Pages build; prefer the `server/` backend
+  (`VITE_API_BASE_URL`) so the key stays server-side.
 
 ## Git / remote notes
 

@@ -6,6 +6,7 @@ import { recognizeStore } from './stores';
 import { redactText, describeRedactions } from './redact';
 import { resolveTax } from './tax';
 import { normalizeISODate, todayISO } from './dates';
+import { HttpError, describeHttpError, isRetryable, withRetry } from './net';
 
 /**
  * Reads a receipt with a vision-capable LLM instead of on-device OCR.
@@ -66,6 +67,64 @@ function coerceNumber(v: unknown): number | undefined {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+interface ChatResponse {
+  choices?: { message?: { content?: string } }[];
+  error?: { message?: string };
+}
+
+/** One vision request to the chat-completions endpoint, with a timeout. */
+async function visionRequest(
+  settings: Settings,
+  model: string,
+  dataUrl: string,
+  timeoutMs = 45_000,
+): Promise<ChatResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(chatUrl(settings.llmBaseUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        // Bounded so a long receipt can't blow past the account's credit limit;
+        // 2000 tokens comfortably fits a 40-line receipt as JSON.
+        max_tokens: 2000,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: PROMPT },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (err) {
+    throw new HttpError(
+      0,
+      err instanceof DOMException && err.name === 'AbortError'
+        ? 'The AI took too long to respond. Try again, or use on-device reading.'
+        : 'Could not reach the AI service. Check your connection and the base URL in Settings.',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new HttpError(res.status, describeHttpError(res.status, body));
+  }
+  return (await res.json()) as ChatResponse;
 }
 
 function asCategory(v: unknown, name: string, store?: string): Category {
@@ -170,39 +229,17 @@ export async function readReceiptWithAI(file: Blob, settings: Settings): Promise
   // reader safe if it is called directly with an un-redacted photo.
   const dataUrl = await toDataUrl(file);
 
-  const res = await fetch(chatUrl(settings.llmBaseUrl), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}),
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      // Bounded so a long receipt can't blow past the account's credit limit;
-      // 2000 tokens comfortably fits a 40-line receipt as JSON.
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: PROMPT },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`AI reading failed (${res.status}). ${body.slice(0, 240)}`);
+  // A vision gateway can hiccup with a transient 5xx or rate-limit. Retry once,
+  // then once more with a smaller image so an oversized photo can still read.
+  let json: ChatResponse;
+  try {
+    json = await withRetry(() => visionRequest(settings, model, dataUrl), { retries: 1 });
+  } catch (err) {
+    if (!(err instanceof HttpError) || !isRetryable(err.status)) throw err;
+    const smaller = await toDataUrl(file, 1100, 0.8);
+    json = await visionRequest(settings, model, smaller);
   }
 
-  const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-    error?: { message?: string };
-  };
   if (json.error?.message) throw new Error(`AI reading failed: ${json.error.message}`);
   const content = json.choices?.[0]?.message?.content;
   if (!content) throw new Error('The AI returned an empty response.');
