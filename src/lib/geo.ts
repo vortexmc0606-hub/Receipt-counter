@@ -189,26 +189,164 @@ export function locationFromText(text: string): GeoLocation | null {
 
 /** Asks the browser for a coarse location (city-level). Resolves null on refusal. */
 export function browserLocation(timeoutMs = 8000): Promise<{ lat: number; lon: number } | null> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      resolve(null);
-      return;
+  return browserLocationDetailed(timeoutMs).then((r) => (r.ok ? r.coords : null));
+}
+
+/** Why a location request could not be answered, in plain English. */
+export interface GeoStatus {
+  /** The browser exposes the geolocation API at all. */
+  supported: boolean;
+  /** The page is on https:// or localhost (required for location). */
+  secure: boolean;
+  /** Current permission state, when the browser can report it. */
+  permission: GeoPermission;
+  /** True only when a fix is actually obtainable right now. */
+  granted: boolean;
+  /** Plain-English reason, suitable to show the user directly. */
+  reason: string;
+}
+
+export type GeoPermission = 'granted' | 'denied' | 'prompt' | 'unsupported' | 'unknown';
+
+export type GeoResult = { ok: true; coords: { lat: number; lon: number } } | { ok: false; status: GeoStatus };
+
+/**
+ * Pure helper: turn the raw capability flags into a status plus a sentence the
+ * user can act on. Kept free of browser globals so it can be unit-tested.
+ */
+export function geoStatusFrom(
+  supported: boolean,
+  secure: boolean,
+  permission: GeoPermission,
+): GeoStatus {
+  if (!supported) {
+    return {
+      supported,
+      secure,
+      permission: 'unsupported',
+      granted: false,
+      reason: "This browser doesn't offer location to web apps.",
+    };
+  }
+  if (!secure) {
+    return {
+      supported,
+      secure,
+      permission,
+      granted: false,
+      reason: 'Location needs a secure connection. Open the app over https:// (or localhost) and try again.',
+    };
+  }
+  if (permission === 'denied') {
+    return {
+      supported,
+      secure,
+      permission,
+      granted: false,
+      reason: 'Location is blocked for this site. Allow it in your browser (the lock icon in the address bar), then try again.',
+    };
+  }
+  if (permission === 'prompt') {
+    return {
+      supported,
+      secure,
+      permission,
+      granted: false,
+      reason: "You haven't allowed location yet — tap “Use my location” and choose Allow.",
+    };
+  }
+  return { supported, secure, permission, granted: true, reason: 'Location is available.' };
+}
+
+/** Pure helper: explain a PositionError code from the browser. */
+export function explainPositionError(code: number): string {
+  switch (code) {
+    case 1:
+      return 'Location permission was refused. Allow it in your browser settings, then try again.';
+    case 2:
+      return "Your device couldn't get a fix. Check that Location Services are switched on for your browser, then try again.";
+    case 3:
+      return 'Getting your location took too long. Move near a window or outside and try again.';
+    default:
+      return "Your device couldn't share a location right now.";
+  }
+}
+
+/** Reads the current geolocation permission without prompting, when possible. */
+export async function queryGeoPermission(): Promise<GeoPermission> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return 'unsupported';
+  try {
+    const perms = navigator.permissions;
+    if (perms?.query) {
+      const status = await perms.query({ name: 'geolocation' as PermissionName });
+      return status.state as GeoPermission;
     }
+  } catch {
+    /* Permissions API is missing or refuses the name — treat as unknown. */
+  }
+  return 'unknown';
+}
+
+/** The current capability + permission picture, without triggering a prompt. */
+export async function geoStatus(): Promise<GeoStatus> {
+  const supported = typeof navigator !== 'undefined' && !!navigator.geolocation;
+  const secure =
+    typeof window !== 'undefined' &&
+    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  const permission = await queryGeoPermission();
+  return geoStatusFrom(supported, secure, permission);
+}
+
+/** Like browserLocation, but says exactly why it failed so the UI can explain. */
+export async function browserLocationDetailed(timeoutMs = 8000): Promise<GeoResult> {
+  const supported = typeof navigator !== 'undefined' && !!navigator.geolocation;
+  const secure =
+    typeof window !== 'undefined' &&
+    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  const permission = await queryGeoPermission();
+
+  if (!supported || !secure || permission === 'denied') {
+    return { ok: false, status: geoStatusFrom(supported, secure, permission) };
+  }
+
+  return new Promise<GeoResult>((resolve) => {
     let done = false;
-    const finish = (v: { lat: number; lon: number } | null) => {
+    const finish = (r: GeoResult) => {
       if (done) return;
       done = true;
-      resolve(v);
+      resolve(r);
     };
-    const timer = setTimeout(() => finish(null), timeoutMs);
+    const timer = setTimeout(
+      () =>
+        finish({
+          ok: false,
+          status: {
+            supported,
+            secure,
+            permission,
+            granted: false,
+            reason: 'Getting your location took too long. Move near a window or outside and try again.',
+          },
+        }),
+      timeoutMs,
+    );
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         clearTimeout(timer);
-        finish({ lat: round2(pos.coords.latitude), lon: round2(pos.coords.longitude) });
+        finish({ ok: true, coords: { lat: round2(pos.coords.latitude), lon: round2(pos.coords.longitude) } });
       },
-      () => {
+      (err) => {
         clearTimeout(timer);
-        finish(null);
+        finish({
+          ok: false,
+          status: {
+            supported,
+            secure,
+            permission: err.code === 1 ? 'denied' : permission,
+            granted: false,
+            reason: explainPositionError(err.code),
+          },
+        });
       },
       { enableHighAccuracy: false, timeout: timeoutMs, maximumAge: 10 * 60 * 1000 },
     );
@@ -258,4 +396,38 @@ export async function detectLocation(receiptText?: string): Promise<GeoLocation 
   }
   if (receiptText) return locationFromText(receiptText);
   return null;
+}
+
+/**
+ * The full picture for the Settings panel: whether location worked, the fix if
+ * it did, and a plain-English reason if it did not. Falls back to a receipt
+ * address only when the caller passes receipt text.
+ */
+export async function detectLocationDetailed(
+  receiptText?: string,
+): Promise<{ location: GeoLocation | null; status: GeoStatus }> {
+  const result = await browserLocationDetailed();
+  if (result.ok) {
+    const loc = locateFromCoords(result.coords.lat, result.coords.lon);
+    if (loc && loc.country) return { location: loc, status: geoStatusFrom(true, true, 'granted') };
+    // We have a fix but no matching tax region — still useful, just unmapped.
+    if (loc) {
+      return {
+        location: loc,
+        status: {
+          supported: true,
+          secure: true,
+          permission: 'granted',
+          granted: true,
+          reason: 'Found your location, but it is outside the areas with a tax estimate.',
+        },
+      };
+    }
+  }
+  const failure: GeoStatus = result.ok
+    ? { supported: true, secure: true, permission: 'granted', granted: false, reason: "Your device shared a location we couldn't map." }
+    : result.status;
+  const fallback = receiptText ? locationFromText(receiptText) : null;
+  if (fallback) return { location: fallback, status: failure };
+  return { location: null, status: failure };
 }

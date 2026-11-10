@@ -36,6 +36,7 @@ import { LearningView } from './components/LearningView';
 import { SettingsView } from './components/SettingsView';
 import { Credits } from './components/Credits';
 import { Background } from './components/Background';
+import { ThemeSweep } from './components/ThemeSweep';
 import { useToast } from './components/Toast';
 import { BRAND } from './lib/brand';
 
@@ -96,10 +97,6 @@ export default function App() {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = settings.theme;
-  }, [settings.theme]);
 
   const saveReceipt = useCallback(
     async (receipt: Receipt, original?: ParsedReceipt) => {
@@ -182,6 +179,7 @@ export default function App() {
     return (
       <>
         <Background />
+        <ThemeSweep theme={settings.theme} />
         <div className="boot">
           <div className="boot-inner">
             <div className="boot-orb">
@@ -205,6 +203,7 @@ export default function App() {
   return (
     <>
       <Background />
+      <ThemeSweep theme={settings.theme} />
       <div className="app app-shell">
         <aside className="sidebar">
           <div className="brand">

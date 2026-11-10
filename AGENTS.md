@@ -123,7 +123,8 @@ Prefer real code paths over mocks.
 The interface is a single stylesheet (`src/styles.css`) organised in numbered
 sections: tokens, background, shell, top bar, cards, buttons, forms, tables,
 chips, scan, chat, modal, empty/alerts, trends, stores, motion, toasts,
-loading, responsive, accessibility, then **section 29 Liquid Glass refinement**.
+loading, responsive, accessibility, **section 29 Liquid Glass refinement**, then
+**section 30 theme transition, daylight polish & location status**.
 
 Key conventions:
 - **Palette tokens** live in `:root` (`--volt`, `--neon`, `--plasma`, `--bg`,
@@ -134,12 +135,22 @@ Key conventions:
   Reusable base class is `.glass-crystal` with `.tier-nav/-modal/-float`.
   Keep fills low-alpha; readability comes from near-white text + a 1px text
   shadow on `.card-pad`/`.modal-body`, not from opaque fills.
+- **Theme switching** (section 30): `ThemeSweep` (`src/components/ThemeSweep.tsx`)
+  owns the `data-theme` attribute and plays a one-shot light wave
+  (`.theme-sweep.to-light/-to-dark`) plus a scoped cross-fade (`.theme-anim` on
+  `<html>`) on every change. It also updates the `theme-color` meta. Do not set
+  `data-theme` anywhere else. Skipped under `prefers-reduced-motion`.
 - **Motion** lives in `src/lib/motion.ts`: `useCountUp`, `useTilt` (writes
   `--gx`/`--gy` for pointer-follow light + a small rotate), `useReveal`,
   `prefersReducedMotion`. All motion is transform/opacity only and gated on
   `prefers-reduced-motion`.
 - **Background** is `src/components/Background.tsx`: aurora blobs (CSS),
   grid, sweep, vignette, and a canvas particle field that pauses on tab hide.
+  The light theme re-tints all of these in section 30.2 ("daylight volt").
+- **Location** lives in `src/lib/geo.ts`. `geoStatus()` reports a Yes/No picture
+  without prompting; `detectLocationDetailed()` returns `{ location, status }`
+  with a plain-English `reason`. `geoStatusFrom()`/`explainPositionError()` are
+  pure and unit-tested. The Settings panel renders `.geo-status` (ok/no).
 - **Notifications**: `ToastProvider` in `src/components/Toast.tsx`; call
   `useToast().notify(msg, kind)`.
 - **Page transitions**: wrap tab content in `.page-enter`; the `.main` element
@@ -147,5 +158,8 @@ Key conventions:
   participates in the max-width centring rule.
 - Store avatar colours and chart palettes are volt blues in `Dashboard.tsx`
   and `Stores.tsx` (`COLORS`).
+- **Mobile first**: phones/iPad/Android are the main target. Use
+  `viewport-fit=cover` + `env(safe-area-inset-*)` for notches, keep touch
+  targets >= 44px, and avoid sticky `:hover` (guard with `@media (hover: none)`).
 
 Do not change the IndexedDB name `receipt-scanner` (existing users' data).

@@ -1,10 +1,16 @@
-import { useRef, useState } from 'react';
-import { AlertTriangle, Database, Download, Moon, Save, ScanLine, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Database, Download, MapPin, Moon, Save, ScanLine, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Upload, XCircle } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import { HAS_SHARED_KEY } from '../lib/env';
 import { backendStatus } from '../lib/api';
-import { describeLocation, detectLocation, estimateTax } from '../lib/geo';
+import {
+  describeLocation,
+  detectLocationDetailed,
+  estimateTax,
+  geoStatus,
+  type GeoStatus,
+} from '../lib/geo';
 
 export function SettingsView({
   settings,
@@ -28,6 +34,7 @@ export function SettingsView({
   const [backendOk, setBackendOk] = useState(false);
   const [locMsg, setLocMsg] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [geo, setGeo] = useState<GeoStatus | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -36,19 +43,32 @@ export function SettingsView({
     setSaved(false);
   };
 
+  // Read the capability/permission picture without prompting, so the panel can
+  // say Yes/No and why before the user taps anything.
+  useEffect(() => {
+    let alive = true;
+    void geoStatus().then((s) => {
+      if (alive) setGeo(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const detectHere = async () => {
     setLocating(true);
     setLocMsg(null);
     try {
-      const loc = await detectLocation();
-      if (!loc) {
-        setLocMsg('Could not determine your location. Turn on smart location and check the browser permission.');
+      const { location, status } = await detectLocationDetailed();
+      setGeo(status);
+      if (!location) {
+        setLocMsg(status.reason);
         return;
       }
-      patch({ location: loc, smartLocation: true });
-      const est = estimateTax(loc);
+      patch({ location, smartLocation: true });
+      const est = estimateTax(location);
       setLocMsg(
-        `Detected ${describeLocation(loc) || 'your area'}.` +
+        `Detected ${describeLocation(location) || 'your area'}.` +
           (est ? ` Estimated sales tax ${est.rate}% — ${est.label}.` : ' No tax estimate available for this area.'),
       );
     } finally {
@@ -127,9 +147,25 @@ export function SettingsView({
               When a receipt shows tax but not the amount, the app uses your location (or the address
               printed on the receipt) to estimate the rate. Your location never leaves this device.
             </p>
+            {geo && (
+              <div className={`geo-status ${geo.granted ? 'ok' : 'no'}`} role="status">
+                <span className="geo-status-icon">
+                  {geo.granted ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                </span>
+                <div>
+                  <strong>{geo.granted ? 'Location: Yes' : 'Location: No'}</strong>
+                  <span className="geo-status-reason">{geo.reason}</span>
+                  {!geo.secure && (
+                    <span className="geo-status-reason">
+                      On iPhone/iPad open the https:// address in Safari; on Android use Chrome over https://.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="row" style={{ gap: 8, marginTop: 6 }}>
               <button className="btn" onClick={() => void detectHere()} disabled={locating}>
-                {locating ? 'Detecting…' : 'Detect my location'}
+                <MapPin size={15} /> {locating ? 'Checking…' : 'Use my location'}
               </button>
               {draft.location && (
                 <button className="btn" onClick={() => patch({ location: null })}>
