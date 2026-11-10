@@ -59,10 +59,10 @@ export function LearningView({
           <Brain size={16} /> Learning
         </h3>
         <p className="muted" style={{ marginTop: 4 }}>
-          The app learns from every correction you make in the review screen — a fixed item name, a
-          corrected price, a header line you delete — and replays it on your next scans. Everything
-          stays on this device. Scan and correct a few receipts and the same mistakes stop coming
-          back.
+          The app learns from corrections you make in the review screen — product names, categories,
+          store identities, recurring OCR text mistakes, and lines that are not items. Those safe
+          corrections can help on later scans. Previous prices are kept only as historical reference:
+          the price read from each new receipt is always preserved. Learning stays on this device.
         </p>
         <div className="row" style={{ gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
           <div>
@@ -162,7 +162,9 @@ export function LearningView({
                       <span className="muted">{i.from}</span>
                       <span aria-hidden> → </span>
                       <strong>{i.name}</strong>
-                      {i.price !== undefined && <span className="muted"> ({i.price.toFixed(2)})</span>}
+                      {i.price !== undefined && (
+                        <span className="muted"> (historical reference: {i.price.toFixed(2)}; not applied to new receipts)</span>
+                      )}
                       <span className="muted"> ×{i.count}</span>
                     </li>
                   ))}
