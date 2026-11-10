@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from '../types';
-import { EMPTY_LEARNING, type LearningData } from './learning';
+import { EMPTY_LEARNING, seedTrainingStoreCatalog, type LearningData } from './learning';
 import { ENV_DEFAULTS } from './env';
 
 interface ReceiptDB extends DBSchema {
@@ -88,7 +88,12 @@ export async function saveSettings(settings: Settings): Promise<void> {
 export async function loadLearning(): Promise<LearningData> {
   const db = await getDB();
   const stored = (await db.get('learning', 'app')) as Partial<LearningData> | undefined;
-  return { ...EMPTY_LEARNING, ...(stored ?? {}) };
+  const current = { ...EMPTY_LEARNING, ...(stored ?? {}) };
+  const seeded = seedTrainingStoreCatalog(current);
+  // Persist once, then keep the seeded catalog alongside the user's own
+  // corrections. This is additive and never overwrites custom mappings.
+  if (seeded !== current) await db.put('learning', seeded, 'app');
+  return seeded;
 }
 
 export async function saveLearning(data: LearningData): Promise<void> {
@@ -98,7 +103,8 @@ export async function saveLearning(data: LearningData): Promise<void> {
 
 export async function clearLearning(): Promise<void> {
   const db = await getDB();
-  await db.put('learning', EMPTY_LEARNING, 'app');
+  // Forget personal corrections but keep the bundled store knowledge.
+  await db.put('learning', seedTrainingStoreCatalog(EMPTY_LEARNING), 'app');
 }
 
 export async function loadMemory(): Promise<MemoryFact[]> {
