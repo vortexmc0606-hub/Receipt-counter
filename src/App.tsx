@@ -156,7 +156,7 @@ export default function App() {
 
   const handleClearLearning = useCallback(async () => {
     await clearLearning();
-    setLearning(EMPTY_LEARNING);
+    setLearning(seedTrainingStoreCatalog(EMPTY_LEARNING));
   }, []);
 
   const handleImport = useCallback(
