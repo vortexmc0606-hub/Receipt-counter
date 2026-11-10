@@ -18,14 +18,28 @@ export function ThemeSweep({ theme }: { theme: 'light' | 'dark' }) {
   useEffect(() => {
     const root = document.documentElement;
 
-    // First mount: apply the saved theme without any animation.
+    // First mount: the pre-paint script in index.html has already applied the
+    // saved theme from localStorage. Adopt that as the baseline so the initial
+    // settings load never animates (a dark-theme user must not see a sweep).
     if (prev.current === null) {
+      const baseline = root.dataset.theme === 'dark' ? 'dark' : 'light';
       prev.current = theme;
-      root.dataset.theme = theme;
+      if (theme !== baseline) root.dataset.theme = theme;
+      try {
+        localStorage.setItem('lumen-theme', theme);
+      } catch {
+        /* private mode — ignore */
+      }
       return;
     }
     if (prev.current === theme) return;
     prev.current = theme;
+
+    try {
+      localStorage.setItem('lumen-theme', theme);
+    } catch {
+      /* private mode — ignore */
+    }
 
     const reduced =
       typeof window !== 'undefined' &&

@@ -179,7 +179,6 @@ export default function App() {
     return (
       <>
         <Background />
-        <ThemeSweep theme={settings.theme} />
         <div className="boot">
           <div className="boot-inner">
             <div className="boot-orb">
