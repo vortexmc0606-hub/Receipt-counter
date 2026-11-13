@@ -38,15 +38,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     const parsed = extractJson(content);
     const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.filter((x): x is string => typeof x === "string") : [];
     const numberOrNull = (v: unknown): number | null => typeof v === "number" && Number.isFinite(v) ? v : null;
-    const items = Array.isArray(parsed.items) ? parsed.items.slice(0, 200).map((item) => {
+    const itemWarnings: string[] = [];
+    const items = Array.isArray(parsed.items) ? parsed.items.slice(0, 200).flatMap((item) => {
       const x = item && typeof item === "object" ? item as Record<string, unknown> : {};
-      return {
+      const price = numberOrNull(x.price);
+      if (price === null) {
+        itemWarnings.push("One or more item lines had an unreadable price and were omitted for manual review.");
+        return [];
+      }
+      const qty = numberOrNull(x.qty);
+      if (qty === null) itemWarnings.push("An item quantity was unclear; the app used quantity 1. Please verify it.");
+      return [{
         name: typeof x.name === "string" ? x.name.slice(0, 160) : "Unclear item",
-        qty: numberOrNull(x.qty),
-        price: numberOrNull(x.price),
+        qty: qty ?? 1,
+        price,
         category: typeof x.category === "string" ? x.category : "Other",
         code: typeof x.code === "string" ? x.code.slice(0, 64) : undefined,
-      };
+      }];
     }) : [];
     return json({
       merchant: typeof parsed.merchant === "string" ? parsed.merchant.slice(0, 120) : "Unknown merchant",
@@ -59,7 +67,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
       total: numberOrNull(parsed.total) ?? 0,
       savings: numberOrNull(parsed.savings) ?? undefined,
       rawText: "",
-      warnings: [...warnings, "AI-extracted values must be checked against the receipt photo before saving."],
+      warnings: [...warnings, ...itemWarnings, "AI-extracted values must be checked against the receipt photo before saving."],
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Receipt reading failed." }, 502);
