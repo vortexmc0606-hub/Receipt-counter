@@ -72,3 +72,10 @@ test('position errors get a plain-English reason per code', () => {
   assert.match(explainPositionError(3), /too long/i);
   assert.ok(explainPositionError(99).length > 0);
 });
+
+
+test('unknown permission is not reported as granted', () => {
+  const s = geoStatusFrom(true, true, 'unknown');
+  assert.equal(s.granted, false);
+  assert.match(s.reason, /tap|enable location/i);
+});
