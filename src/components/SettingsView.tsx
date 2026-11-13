@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Database, Download, MapPin, Moon, ScanLine, ShieldCheck, Sparkles, Sun, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, Download, MapPin, Moon, ShieldCheck, Sparkles, Sun, Upload, XCircle } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import {
