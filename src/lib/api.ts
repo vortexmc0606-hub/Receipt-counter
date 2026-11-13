@@ -13,7 +13,7 @@ import type { ChatMessage, MemoryFact, Receipt, Settings } from '../types';
  */
 
 export function hasBackend(settings: Settings): boolean {
-  return Boolean(settings.apiBaseUrl.trim());
+  return Boolean(settings.apiBaseUrl.trim()) || import.meta.env.VITE_CLOUDFLARE_FUNCTIONS === 'true';
 }
 
 function base(settings: Settings): string {
