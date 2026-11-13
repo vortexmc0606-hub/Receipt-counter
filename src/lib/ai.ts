@@ -1,4 +1,5 @@
 import type { Category, ReceiptItem, Settings } from '../types';
+import receiptTrainingConfig from '../../universal_crinkly_receipt_ai_training_v3.json';
 import { CATEGORIES } from '../types';
 import { loadBitmap } from './ocr';
 import { categorize } from './category';
@@ -102,7 +103,15 @@ async function visionRequest(
           {
             role: 'user',
             content: [
-              { type: 'text', text: PROMPT },
+              { type: 'text', text: `${PROMPT}\n\nStructured receipt-recognition profile from dataset ${receiptTrainingConfig.dataset_name} v${receiptTrainingConfig.version}. Treat this as extraction guidance, not as evidence about the pictured receipt:\n${JSON.stringify({
+                supported_countries: receiptTrainingConfig.supported_countries,
+                store_categories: receiptTrainingConfig.store_categories,
+                receipt_damage_conditions: receiptTrainingConfig.receipt_damage_conditions,
+                merchant_detection: receiptTrainingConfig.merchant_detection,
+                fields_to_extract: receiptTrainingConfig.fields_to_extract,
+                recognition_rules: receiptTrainingConfig.recognition_rules,
+                safety: receiptTrainingConfig.safety,
+              })}` },
               { type: 'image_url', image_url: { url: dataUrl } },
             ],
           },
