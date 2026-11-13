@@ -246,16 +246,21 @@ export function geoStatusFrom(
       reason: 'Location is blocked for this site. Allow it in your browser (the lock icon in the address bar), then try again.',
     };
   }
-  if (permission === 'prompt') {
+  if (permission === 'prompt' || permission === 'unknown') {
     return {
       supported,
       secure,
       permission,
       granted: false,
-      reason: "You haven't allowed location yet — tap “Use my location” and choose Allow.",
+      reason: permission === 'prompt'
+        ? "You haven't allowed location yet — tap “Enable location” and choose Allow."
+        : 'This browser cannot report the permission state yet. Tap “Enable location” to request a location fix.',
     };
   }
-  return { supported, secure, permission, granted: true, reason: 'Location is available.' };
+  if (permission === 'granted') {
+    return { supported, secure, permission, granted: true, reason: 'Location is available.' };
+  }
+  return { supported, secure, permission, granted: false, reason: 'Location is not available.' };
 }
 
 /** Pure helper: explain a PositionError code from the browser. */
