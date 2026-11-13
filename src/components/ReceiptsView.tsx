@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Download, FileSpreadsheet, ImageOff, ReceiptText, Search, Trash2, X } from 'lucide-react';
 import { CATEGORIES, type Category, type Receipt } from '../types';
 import { groupByDate, money, prettyDate, receiptTotal } from '../lib/utils';
@@ -18,6 +18,9 @@ export function ReceiptsView({
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [open, setOpen] = useState<Receipt | null>(null);
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  const swipeStart = useRef<{ id: string; x: number; y: number } | null>(null);
+  const didSwipe = useRef(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -90,22 +93,74 @@ export function ReceiptsView({
               </div>
               <div className="card">
                 {list.map((r) => (
-                  <div className="receipt-row" key={r.id} onClick={() => setOpen(r)}>
-                    {r.imageThumb ? (
-                      <img className="receipt-thumb" src={r.imageThumb} alt="" />
-                    ) : (
-                      <div className="receipt-thumb">
-                        <ImageOff size={17} />
+                  <div className="receipt-swipe-wrap" key={r.id}>
+                    <button
+                      type="button"
+                      className="receipt-swipe-delete"
+                      aria-label={`Delete receipt from ${r.merchant}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(r.id);
+                        setSwipedId(null);
+                      }}
+                    >
+                      <Trash2 size={16} /> Delete
+                    </button>
+                    <div
+                      className={`receipt-row${swipedId === r.id ? ' is-swiped' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open receipt from ${r.merchant}`}
+                      onPointerDown={(event) => {
+                        if (event.pointerType === 'mouse') return;
+                        swipeStart.current = { id: r.id, x: event.clientX, y: event.clientY };
+                        didSwipe.current = false;
+                      }}
+                      onPointerUp={(event) => {
+                        const start = swipeStart.current;
+                        swipeStart.current = null;
+                        if (!start || start.id !== r.id) return;
+                        const dx = event.clientX - start.x;
+                        const dy = event.clientY - start.y;
+                        if (dx < -60 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                          didSwipe.current = true;
+                          setSwipedId(r.id);
+                        }
+                      }}
+                      onPointerCancel={() => { swipeStart.current = null; }}
+                      onClick={() => {
+                        if (didSwipe.current) {
+                          didSwipe.current = false;
+                          return;
+                        }
+                        if (swipedId === r.id) {
+                          setSwipedId(null);
+                          return;
+                        }
+                        setSwipedId(null);
+                        setOpen(r);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setOpen(r);
+                        }
+                      }}
+                    >
+                      {r.imageThumb ? (
+                        <img className="receipt-thumb" src={r.imageThumb} alt="" />
+                      ) : (
+                        <div className="receipt-thumb"><ImageOff size={17} /></div>
+                      )}
+                      <div className="receipt-main">
+                        <div className="receipt-merchant">{r.merchant}</div>
+                        <div className="receipt-meta">
+                          {r.items.length} item{r.items.length === 1 ? '' : 's'}
+                          {r.items.length > 0 && ` · ${r.items.slice(0, 3).map((i) => i.name).join(', ')}`}
+                        </div>
                       </div>
-                    )}
-                    <div className="receipt-main">
-                      <div className="receipt-merchant">{r.merchant}</div>
-                      <div className="receipt-meta">
-                        {r.items.length} item{r.items.length === 1 ? '' : 's'}
-                        {r.items.length > 0 && ` · ${r.items.slice(0, 3).map((i) => i.name).join(', ')}`}
-                      </div>
+                      <div className="receipt-amount">{money(receiptTotal(r), r.currency || currency)}</div>
                     </div>
-                    <div className="receipt-amount">{money(receiptTotal(r), r.currency || currency)}</div>
                   </div>
                 ))}
               </div>
