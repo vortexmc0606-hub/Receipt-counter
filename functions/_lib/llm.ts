@@ -17,8 +17,11 @@ export function configured(env: Env): boolean {
 }
 
 function endpoint(base: string): string {
-  const value = base.trim().replace(/\\/$/, "");
-  if (!/^https:\\/\\//i.test(value) && !/^http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i.test(value)) {
+  const value = base.trim().replace(/\/$/, "");
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { throw new Error("LLM_BASE_URL must be a valid URL."); }
+  const localHttp = parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !localHttp) {
     throw new Error("LLM_BASE_URL must use HTTPS (HTTP is allowed only for local development).");
   }
   return value.endsWith("/chat/completions") ? value : value + "/chat/completions";
@@ -31,16 +34,8 @@ export async function chat(env: Env, messages: unknown[], model?: string, maxTok
   try {
     const response = await fetch(endpoint(env.LLM_BASE_URL!), {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${env.LLM_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: model || env.LLM_MODEL || "gpt-4o-mini",
-        temperature: 0,
-        max_tokens: maxTokens,
-        messages,
-      }),
+      headers: { "content-type": "application/json", authorization: `Bearer ${env.LLM_API_KEY}` },
+      body: JSON.stringify({ model: model || env.LLM_MODEL || "gpt-4o-mini", temperature: 0, max_tokens: maxTokens, messages }),
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -48,11 +43,11 @@ export async function chat(env: Env, messages: unknown[], model?: string, maxTok
       throw new Error(`AI provider returned HTTP ${response.status}: ${detail}`);
     }
     const payload = await response.json() as {
-      choices?: Array<{ message?: { content?: string | Array<{type?:string;text?:string}> } }>;
+      choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
     };
     const content = payload.choices?.[0]?.message?.content;
     if (typeof content === "string") return content;
-    if (Array.isArray(content)) return content.map((part) => part.text || "").join("\\n");
+    if (Array.isArray(content)) return content.map((part) => part.text || "").join("\n");
     throw new Error("AI provider returned an empty response.");
   } finally {
     clearTimeout(timer);
@@ -67,7 +62,7 @@ export function extractJson(text: string): Record<string, unknown> {
 }
 
 export const RECEIPT_GUARDRAILS = `
-Receipt-photo evaluation notes from the verified sample set:
+Verified receipt-photo evaluation notes:
 - Four India Bazaar photos may show the SAME receipt. Treat multiple views as corroborating evidence, never as separate purchases.
 - Two Walmart samples are different receipts; do not merge receipts just because the merchant matches.
 - Expect long grocery receipts, small thermal print, folded/wrinkled paper, curl, perspective distortion and uneven lighting.
