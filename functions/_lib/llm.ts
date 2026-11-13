@@ -1,4 +1,5 @@
 import receiptTrainingConfig from "../../universal_crinkly_receipt_ai_training_v3.json";
+import receiptEvaluationReference from "../../receipt-image-evaluation.json";
 
 export interface Env {
   LLM_BASE_URL?: string;
@@ -66,6 +67,9 @@ export function extractJson(text: string): Record<string, unknown> {
 export const RECEIPT_GUARDRAILS = `
 Configured receipt-recognition profile (v${receiptTrainingConfig.version}):
 ${JSON.stringify(receiptTrainingConfig)}
+
+Verified uploaded-image evaluation reference:
+${JSON.stringify(receiptEvaluationReference)}
 
 Verified receipt-photo evaluation notes:
 - Four India Bazaar photos may show the SAME receipt. Treat multiple views as corroborating evidence, never as separate purchases.
