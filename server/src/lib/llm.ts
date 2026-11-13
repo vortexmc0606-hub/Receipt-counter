@@ -1,10 +1,34 @@
 import type { AiReadResult, Category, ChatMessage, ReceiptItem } from '../types.js';
+import { createRequire } from 'node:module';
 import { resolveTax } from './tax.js';
 
 /**
  * Talks to an OpenAI-compatible chat-completions endpoint. The API key stays on
  * this server; callers never see it.
  */
+
+const require = createRequire(import.meta.url);
+const receiptTrainingConfig = require('../receipt-training.json') as {
+  dataset_name: string;
+  version: string;
+  supported_countries: string[];
+  store_categories: Record<string, string[]>;
+  receipt_damage_conditions: string[];
+  merchant_detection: unknown;
+  fields_to_extract: string[];
+  recognition_rules: unknown;
+  safety: unknown;
+};
+
+const TRAINING_CONTEXT = JSON.stringify({
+  supported_countries: receiptTrainingConfig.supported_countries,
+  store_categories: receiptTrainingConfig.store_categories,
+  receipt_damage_conditions: receiptTrainingConfig.receipt_damage_conditions,
+  merchant_detection: receiptTrainingConfig.merchant_detection,
+  fields_to_extract: receiptTrainingConfig.fields_to_extract,
+  recognition_rules: receiptTrainingConfig.recognition_rules,
+  safety: receiptTrainingConfig.safety,
+});
 
 const CATEGORIES: Category[] = [
   'Groceries',
@@ -173,7 +197,7 @@ export async function readReceipt(cfg: LlmConfig, dataUrl: string): Promise<AiRe
       {
         role: 'user',
         content: [
-          { type: 'text', text: READ_PROMPT },
+          { type: 'text', text: `${READ_PROMPT}\n\nStructured receipt-recognition profile from dataset ${receiptTrainingConfig.dataset_name} v${receiptTrainingConfig.version}. Treat this as extraction guidance, not as evidence about the pictured receipt:\n${TRAINING_CONTEXT}` },
           { type: 'image_url', image_url: { url: dataUrl } },
         ],
       },
