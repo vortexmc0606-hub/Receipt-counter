@@ -1234,6 +1234,35 @@ table.data tbody tr:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.receipt-swipe-wrap {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 55%, transparent);
+  border-radius: 0;
+}
+
+.receipt-swipe-wrap:last-child {
+  border-bottom: none;
+}
+
+.receipt-swipe-delete {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  color: white;
+  background: var(--danger);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .receipt-row {
   display: flex;
   align-items: center;
@@ -1241,7 +1270,16 @@ table.data tbody tr:hover {
   padding: 14px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 55%, transparent);
   cursor: pointer;
-  transition: background 0.2s, transform 0.2s var(--ease-out);
+  transition: background 0.2s, transform 0.24s cubic-bezier(.2,.8,.2,1);
+  position: relative;
+  z-index: 1;
+  background: var(--surface-1);
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.receipt-row.is-swiped {
+  transform: translateX(-88px);
 }
 
 .receipt-row:last-child {
