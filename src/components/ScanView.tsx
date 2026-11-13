@@ -122,6 +122,7 @@ export function ScanView({
         // device. Done once here so both the backend and direct-AI paths are
         // covered.
         const willUseAi = hasBackend(settings) || (settings.aiReading && settings.llmBaseUrl.trim());
+        let aiPrivacyBlocked = false;
         if (willUseAi && settings.redactPersonal) {
           try {
             setStatusText('Blacking out personal details…');
@@ -132,13 +133,16 @@ export function ScanView({
               if (redacted.summary) notes.push(redacted.summary);
             }
           } catch {
-            /* redaction is best-effort; never block a read on it */
+            // Fail closed: never send an unredacted receipt to a remote AI
+            // provider when the user's privacy preference is enabled.
+            aiPrivacyBlocked = true;
+            notes.push('Personal-detail redaction could not be verified, so remote AI was skipped. This receipt was read on your device instead.');
           }
         }
 
         // Preferred path: the backend, which holds the API key so this browser
-        // never sees it.
-        if (hasBackend(settings)) {
+        // never sees it. Remote AI is skipped if the requested redaction failed.
+        if (hasBackend(settings) && !aiPrivacyBlocked) {
           setStatusText('Reading via server…');
           setProgress(35);
           try {
@@ -155,7 +159,7 @@ export function ScanView({
         }
 
         // Next: a vision model called directly from this browser.
-        if (!outcome && settings.aiReading && settings.llmBaseUrl.trim()) {
+        if (!outcome && !aiPrivacyBlocked && settings.aiReading && settings.llmBaseUrl.trim()) {
           setStatusText('Reading with AI…');
           setProgress(35);
           try {
