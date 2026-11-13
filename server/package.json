@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('src/receipt-training.json','dist/receipt-training.json')\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
