@@ -46,12 +46,14 @@ with no egress fees, and you can put Cloudflare Pages in front of it.
 2. Vercel reads `vercel.json` (build `npm run build`, output `dist`).
 3. Deploy.
 
-### Cloudflare Pages
-1. Create a Pages project, connect the repo.
-2. Build command `npm run build`, output directory `dist`.
-3. Or use the included workflow: add `CLOUDFLARE_API_TOKEN` and
-   `CLOUDFLARE_ACCOUNT_ID` secrets, then enable the `push:` trigger in
-   `.github/workflows/deploy-cloudflare.yml`.
+### Cloudflare Pages + Functions (recommended)
+1. Connect this GitHub repository to a Cloudflare Pages project.
+2. Build command: `npm run build`; output directory: `dist`; production branch: `main`.
+3. Add runtime secrets in Pages > Settings > Variables and Secrets: `LLM_BASE_URL`, `LLM_API_KEY`, and optional `LLM_MODEL` / `VISION_MODEL`. Never use `VITE_LLM_API_KEY` for this deployment; Vite variables are public in the browser bundle.
+4. Set the build variable `VITE_CLOUDFLARE_FUNCTIONS=true` so the app uses the same-origin `/api/*` Pages Functions automatically. Users do not enter backend URLs or API keys.
+5. The Pages Functions in `functions/api/` proxy AI parsing and assistant calls. Receipts remain in the user's browser IndexedDB; no shared receipt database is created by default.
+
+The old `server/` Node/Express backend is optional for non-Cloudflare hosting. Cloudflare Pages uses Functions instead.
 
 ### Firebase Hosting
 ```bash
