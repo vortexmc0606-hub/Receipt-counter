@@ -31,5 +31,3 @@ jobs:
         run: npm test
       - name: Typecheck and build
         run: npm run build
-        env:
-          # Validate the normal root-host build used by Cloudflare Pages.
