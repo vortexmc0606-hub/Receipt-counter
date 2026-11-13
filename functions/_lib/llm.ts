@@ -1,3 +1,5 @@
+import receiptTrainingConfig from "../../universal_crinkly_receipt_ai_training_v3.json";
+
 export interface Env {
   LLM_BASE_URL?: string;
   LLM_API_KEY?: string;
@@ -62,6 +64,9 @@ export function extractJson(text: string): Record<string, unknown> {
 }
 
 export const RECEIPT_GUARDRAILS = `
+Configured receipt-recognition profile (v${receiptTrainingConfig.version}):
+${JSON.stringify(receiptTrainingConfig)}
+
 Verified receipt-photo evaluation notes:
 - Four India Bazaar photos may show the SAME receipt. Treat multiple views as corroborating evidence, never as separate purchases.
 - Two Walmart samples are different receipts; do not merge receipts just because the merchant matches.
