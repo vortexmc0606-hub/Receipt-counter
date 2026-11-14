@@ -1291,6 +1291,11 @@ table.data tbody tr:hover {
   transform: translateX(3px);
 }
 
+/* Keep the open delete action in place even while the row is hovered. */
+.receipt-row.is-swiped:hover {
+  transform: translateX(-88px);
+}
+
 .receipt-thumb {
   width: 46px;
   height: 46px;
