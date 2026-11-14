@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Database, Download, MapPin, Moon, ShieldCheck, Sparkles, Sun, Upload, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, Download, MapPin, ShieldCheck, Sparkles, Sun, Upload, XCircle } from 'lucide-react';
 import type { Settings } from '../types';
 import { Modal } from './ui';
 import {
@@ -112,15 +112,6 @@ export function SettingsView({
                 {option.label}
               </button>
             ))}
-          </div>
-        </div>
-        <div className="field" style={{ marginTop: 18 }}>
-          <label>Appearance</label>
-          <div className="row" style={{ gap: 8 }}>
-            <button className={`btn${draft.theme === 'light' ? ' btn-primary' : ''}`}
-              onClick={() => void savePatch({ theme: 'light' })}><Sun size={15} /> Light</button>
-            <button className={`btn${draft.theme === 'dark' ? ' btn-primary' : ''}`}
-              onClick={() => void savePatch({ theme: 'dark' })}><Moon size={15} /> Dark</button>
           </div>
         </div>
         <div className="field" style={{ marginTop: 18 }}>
