@@ -122,7 +122,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultTaxRate: 0,
   smartLocation: false,
   location: null,
-  theme: 'light',
+  theme: 'dark',
 };
 
 export interface ChatMessage {
