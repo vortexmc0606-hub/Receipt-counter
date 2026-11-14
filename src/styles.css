@@ -3394,3 +3394,204 @@ label,
     transition-duration: .01ms;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   LIGHT MODE REFINEMENT — editorial dashboard, warm paper, clear hierarchy
+   -------------------------------------------------------------------------- */
+[data-theme='light'] {
+  --bg: #f5f7fb;
+  --bg-2: #edf1f7;
+  --surface: #ffffff;
+  --surface-solid: #ffffff;
+  --surface-2: #f7f9fc;
+  --surface-3: #eef3f9;
+  --glass: #ffffff;
+  --glass-strong: rgba(255,255,255,.97);
+  --glass-soft: #f8fafd;
+  --glass-border: #e5eaf2;
+  --glass-border-hi: #cbd8ea;
+  --text: #18263d;
+  --text-2: #53647c;
+  --text-3: #7b899d;
+  --primary: #315fba;
+  --primary-hover: #254f9f;
+  --primary-soft: #edf3ff;
+  --primary-glow: rgba(49,95,186,.14);
+  --border: #e4eaf2;
+  --shadow-sm: 0 1px 3px rgba(25,43,70,.035);
+  --shadow: 0 8px 24px rgba(25,43,70,.055);
+  --shadow-lg: 0 20px 55px rgba(25,43,70,.12);
+}
+
+/* A quiet canvas with one restrained wash of color. */
+[data-theme='light'] .bg-stage {
+  background:
+    radial-gradient(ellipse 58% 42% at 5% 0%, rgba(82,129,205,.075), transparent 70%),
+    radial-gradient(ellipse 42% 38% at 100% 0%, rgba(63,164,172,.055), transparent 72%),
+    linear-gradient(180deg, #f8faff 0%, #f1f4f9 58%, #edf1f7 100%);
+}
+[data-theme='light'] .bg-grid,
+[data-theme='light'] .bg-particles,
+[data-theme='light'] .bg-sweep,
+[data-theme='light'] .bg-aurora { opacity: 0 !important; }
+[data-theme='light'] .bg-vignette { display: none; }
+
+/* Navigation is a soft rail, not a giant white slab. */
+[data-theme='light'] .sidebar {
+  background: rgba(250,252,255,.94);
+  border-right: 1px solid #e4eaf2;
+  box-shadow: 5px 0 24px rgba(30,49,78,.035);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-theme='light'] .topbar {
+  background: rgba(248,250,253,.94);
+  border-bottom: 1px solid #e5eaf2;
+  box-shadow: 0 3px 14px rgba(30,49,78,.025);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-theme='light'] .sidebar-label,
+[data-theme='light'] .brand-caption,
+[data-theme='light'] .sidebar-footer,
+[data-theme='light'] .topbar-kicker {
+  color: #77869b;
+}
+[data-theme='light'] .sidebar-nav button {
+  color: #586981;
+  border-radius: 10px;
+}
+[data-theme='light'] .sidebar-nav button.active {
+  color: #244f9c;
+  background: #eaf1fc;
+  border: 1px solid #dce7f8;
+  box-shadow: inset 3px 0 0 #4777c5;
+}
+[data-theme='light'] .sidebar-nav button:hover {
+  color: #233d64;
+  background: #f0f4fa;
+  transform: none;
+}
+
+/* Cards: solid, crisp, consistent; no stacked glass or glossy overlays. */
+[data-theme='light'] .card,
+[data-theme='light'] .stat,
+[data-theme='light'] .glass-crystal {
+  background: #fff;
+  background-image: none;
+  border: 1px solid #e5eaf2;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(28,45,72,.025), 0 7px 20px rgba(28,45,72,.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+[data-theme='light'] .card::before,
+[data-theme='light'] .card::after,
+[data-theme='light'] .glass-crystal::before,
+[data-theme='light'] .glass-crystal::after { display: none !important; }
+[data-theme='light'] .card:hover {
+  transform: translateY(-1px);
+  border-color: #d4deec;
+  box-shadow: 0 3px 8px rgba(28,45,72,.035), 0 12px 26px rgba(28,45,72,.055);
+}
+[data-theme='light'] .main .card-pad,
+[data-theme='light'] .modal-body,
+[data-theme='light'] .card,
+[data-theme='light'] .stat { text-shadow: none !important; }
+
+[data-theme='light'] .section-title { color: #243650; }
+[data-theme='light'] .section-title svg { color: #4774b8; }
+[data-theme='light'] .stat-label { color: #718097; }
+[data-theme='light'] .stat-value {
+  background: none;
+  color: #1d3558;
+  -webkit-text-fill-color: currentColor;
+  letter-spacing: -1px;
+}
+[data-theme='light'] .muted,
+[data-theme='light'] .tiny { color: #61718a; }
+
+/* Form controls, chips and utility panels share the same quiet treatment. */
+[data-theme='light'] .topbar-status,
+[data-theme='light'] .privacy-card,
+[data-theme='light'] .geo-status,
+[data-theme='light'] .chip,
+[data-theme='light'] .suggestion,
+[data-theme='light'] .search-field {
+  background: #f8fafd;
+  border: 1px solid #e4eaf2;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+[data-theme='light'] input:not([type='checkbox']):not([type='radio']),
+[data-theme='light'] select,
+[data-theme='light'] textarea,
+[data-theme='light'] .input,
+[data-theme='light'] .select {
+  background: #fff;
+  color: #1c2c44;
+  border: 1px solid #dce4ef;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(25,43,70,.025);
+}
+[data-theme='light'] input:focus,
+[data-theme='light'] select:focus,
+[data-theme='light'] textarea:focus,
+[data-theme='light'] .input:focus {
+  outline: none;
+  border-color: #8eaddd;
+  box-shadow: 0 0 0 3px rgba(64,112,190,.12);
+}
+[data-theme='light'] input::placeholder,
+[data-theme='light'] textarea::placeholder { color: #94a0b1; }
+[data-theme='light'] .btn:not(.btn-primary):not(.btn-danger) {
+  color: #40536e;
+  background: #fff;
+  border: 1px solid #dfe6ef;
+  box-shadow: 0 1px 2px rgba(25,43,70,.025);
+}
+[data-theme='light'] .btn:not(.btn-primary):not(.btn-danger):hover {
+  background: #f5f8fc;
+  border-color: #cbd8e8;
+}
+[data-theme='light'] .btn-primary {
+  color: #fff;
+  background: #315fba;
+  border-color: #315fba;
+  box-shadow: 0 3px 9px rgba(49,95,186,.16);
+}
+[data-theme='light'] .btn-primary:hover {
+  background: #254f9f;
+  border-color: #254f9f;
+}
+[data-theme='light'] .modal {
+  color: #1c2c44;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  box-shadow: 0 22px 60px rgba(24,39,63,.16);
+}
+[data-theme='light'] .modal-backdrop { background: rgba(24,39,63,.28); }
+[data-theme='light'] .divider,
+[data-theme='light'] hr { border-color: #e8edf4; }
+
+/* Tables and data rows need to feel like a product, not a spreadsheet dump. */
+[data-theme='light'] table { color: #263850; }
+[data-theme='light'] th {
+  color: #738198;
+  background: #f7f9fc;
+  font-weight: 700;
+}
+[data-theme='light'] td,
+[data-theme='light'] th { border-color: #e9edf3; }
+[data-theme='light'] tr:hover td { background: #f8faff; }
+
+@media (hover: none) {
+  [data-theme='light'] .card:hover { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='light'] *,
+  [data-theme='light'] *::before,
+  [data-theme='light'] *::after { transition-duration: .01ms !important; }
+}
