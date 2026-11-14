@@ -115,6 +115,8 @@ export function ReceiptsView({
                         if (event.pointerType === 'mouse') return;
                         swipeStart.current = { id: r.id, x: event.clientX, y: event.clientY };
                         didSwipe.current = false;
+                        // Keep receiving pointer-up if the finger drifts beyond the row.
+                        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* iOS/browser fallback */ }
                       }}
                       onPointerUp={(event) => {
                         const start = swipeStart.current;
