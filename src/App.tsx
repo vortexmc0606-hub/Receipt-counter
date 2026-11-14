@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Brain, Info, Moon, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, Sun, TrendingUp } from 'lucide-react';
+import { BarChart3, Brain, Info, ReceiptText, ScanLine, Settings as SettingsIcon, Sparkles, Store as StoreIcon, TrendingUp } from 'lucide-react';
 import { DEFAULT_SETTINGS, type MemoryFact, type Receipt, type Settings } from './types';
 import {
   clearAllReceipts,
@@ -250,10 +250,6 @@ export default function App() {
           <div className="topbar-status"><span /> All changes saved locally</div>
           <button className="btn btn-primary topbar-scan" onClick={() => setTab('scan')}>
             <ScanLine size={16} /> <span>New scan</span>
-          </button>
-          <button className="btn btn-ghost btn-icon theme-toggle" title="Toggle theme" aria-label="Toggle theme"
-            onClick={() => void persistSettings({ ...settings, theme: settings.theme === 'dark' ? 'light' : 'dark' })}>
-            {settings.theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
           </button>
         </header>
 
