@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+on:
+  # Cloudflare Pages is the production host. Keep this workflow manual for fallback deploys only.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          GITHUB_PAGES: "true"
+          # Shared key baked in at build time so every visitor uses one key.
+          # Supplied from repository secrets, never committed.
+          VITE_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          VITE_LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          VITE_LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          VITE_VISION_MODEL: ${{ secrets.VISION_MODEL }}
+          VITE_AI_READING: "true"
+          # Optional: point the built app at your backend so the key lives on
+          # the server instead of in this bundle. Set the BACKEND_URL secret.
+          VITE_API_BASE_URL: ${{ secrets.BACKEND_URL }}
+          VITE_BACKEND_SYNC: ${{ secrets.BACKEND_SYNC }}
+
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
