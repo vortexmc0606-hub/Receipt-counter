@@ -3595,3 +3595,231 @@ label,
   [data-theme='light'] *::before,
   [data-theme='light'] *::after { transition-duration: .01ms !important; }
 }
+
+
+/* --------------------------------------------------------------------------
+   LIGHT THEME V3 — warm editorial finance dashboard
+   A deliberate visual reset: warm canvas, ink typography, evergreen accent.
+   -------------------------------------------------------------------------- */
+[data-theme='light'] {
+  --bg: #f4f3ee;
+  --bg-2: #eeede6;
+  --surface: #ffffff;
+  --surface-solid: #ffffff;
+  --surface-2: #f8f8f4;
+  --surface-3: #efefe8;
+  --glass: #ffffff;
+  --glass-strong: #f7f6f1;
+  --glass-soft: #f1f0e9;
+  --glass-border: #e6e5dc;
+  --glass-border-hi: #d6d8ca;
+  --text: #202a25;
+  --text-2: #58665e;
+  --text-3: #89928b;
+  --primary: #18765c;
+  --primary-hover: #105c47;
+  --primary-soft: #e7f2ec;
+  --primary-glow: rgba(24,118,92,.10);
+  --border: #e5e5dc;
+  --shadow-sm: 0 1px 2px rgba(32,42,37,.025);
+  --shadow: 0 5px 16px rgba(32,42,37,.045);
+  --shadow-lg: 0 18px 44px rgba(32,42,37,.12);
+}
+
+[data-theme='light'] .bg-stage {
+  background: #f4f3ee !important;
+}
+[data-theme='light'] .bg-grid,
+[data-theme='light'] .bg-particles,
+[data-theme='light'] .bg-sweep,
+[data-theme='light'] .bg-aurora,
+[data-theme='light'] .bg-vignette {
+  display: none !important;
+}
+
+/* Give the layout a clear frame instead of a floating-glass appearance. */
+[data-theme='light'] .sidebar {
+  background: #eeede6 !important;
+  border-right: 1px solid #e1e0d7 !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-theme='light'] .topbar {
+  background: #f4f3ee !important;
+  border-bottom: 1px solid #e5e4dc !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-theme='light'] .main {
+  background: transparent;
+}
+[data-theme='light'] .sidebar-label,
+[data-theme='light'] .brand-caption,
+[data-theme='light'] .sidebar-footer,
+[data-theme='light'] .topbar-kicker {
+  color: #818b82 !important;
+}
+[data-theme='light'] .brand-text {
+  background: none !important;
+  color: #1b4537 !important;
+  -webkit-text-fill-color: #1b4537 !important;
+}
+[data-theme='light'] .sidebar-nav button {
+  color: #536158 !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+}
+[data-theme='light'] .sidebar-nav button.active {
+  color: #155d47 !important;
+  background: #dfece3 !important;
+  border-color: #d3e3d8 !important;
+  box-shadow: inset 3px 0 0 #258363 !important;
+}
+[data-theme='light'] .sidebar-nav button:hover {
+  color: #244b3b !important;
+  background: #e7e8df !important;
+  transform: none !important;
+}
+
+/* White content panels sit quietly on the warm canvas. */
+[data-theme='light'] .card,
+[data-theme='light'] .stat,
+[data-theme='light'] .glass-crystal {
+  color: #202a25 !important;
+  background: #fff !important;
+  background-image: none !important;
+  border: 1px solid #e6e7df !important;
+  border-radius: 13px !important;
+  box-shadow: 0 2px 8px rgba(32,42,37,.035) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-theme='light'] .card::before,
+[data-theme='light'] .card::after,
+[data-theme='light'] .stat::before,
+[data-theme='light'] .stat::after,
+[data-theme='light'] .glass-crystal::before,
+[data-theme='light'] .glass-crystal::after {
+  display: none !important;
+  content: none !important;
+}
+[data-theme='light'] .card:hover {
+  transform: translateY(-1px) !important;
+  border-color: #d6ddd3 !important;
+  box-shadow: 0 5px 14px rgba(32,42,37,.055) !important;
+}
+[data-theme='light'] .section-title {
+  color: #26372e !important;
+  font-weight: 750;
+  letter-spacing: -.35px;
+}
+[data-theme='light'] .section-title svg,
+[data-theme='light'] .stat-label svg {
+  color: #258363 !important;
+  filter: none !important;
+}
+[data-theme='light'] .stat-label {
+  color: #79867d !important;
+  letter-spacing: .8px;
+}
+[data-theme='light'] .stat-value {
+  color: #203b2f !important;
+  background: none !important;
+  -webkit-text-fill-color: #203b2f !important;
+  text-shadow: none !important;
+  letter-spacing: -1.2px;
+}
+[data-theme='light'] .muted,
+[data-theme='light'] .tiny {
+  color: #647269 !important;
+}
+
+/* Consistent controls, with green reserved for meaningful actions. */
+[data-theme='light'] .topbar-status,
+[data-theme='light'] .privacy-card,
+[data-theme='light'] .geo-status,
+[data-theme='light'] .chip,
+[data-theme='light'] .suggestion,
+[data-theme='light'] .search-field {
+  color: #536158 !important;
+  background: #f8f8f4 !important;
+  border: 1px solid #e6e7df !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+[data-theme='light'] input:not([type='checkbox']):not([type='radio']),
+[data-theme='light'] select,
+[data-theme='light'] textarea,
+[data-theme='light'] .input,
+[data-theme='light'] .select {
+  color: #26352d !important;
+  background: #fff !important;
+  border: 1px solid #dfe4dc !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+}
+[data-theme='light'] input:focus,
+[data-theme='light'] select:focus,
+[data-theme='light'] textarea:focus,
+[data-theme='light'] .input:focus {
+  outline: none !important;
+  border-color: #70a58e !important;
+  box-shadow: 0 0 0 3px rgba(37,131,99,.12) !important;
+}
+[data-theme='light'] input::placeholder,
+[data-theme='light'] textarea::placeholder {
+  color: #9aa49c !important;
+}
+[data-theme='light'] .btn:not(.btn-primary):not(.btn-danger) {
+  color: #45564c !important;
+  background: #fff !important;
+  border: 1px solid #dfe4dc !important;
+  box-shadow: none !important;
+}
+[data-theme='light'] .btn:not(.btn-primary):not(.btn-danger):hover {
+  color: #1d5944 !important;
+  background: #f3f7f3 !important;
+  border-color: #c9d9cd !important;
+}
+[data-theme='light'] .btn-primary {
+  color: #fff !important;
+  background: #18765c !important;
+  border-color: #18765c !important;
+  box-shadow: 0 2px 6px rgba(24,118,92,.16) !important;
+}
+[data-theme='light'] .btn-primary:hover {
+  background: #105c47 !important;
+  border-color: #105c47 !important;
+}
+[data-theme='light'] .modal {
+  color: #26352d !important;
+  background: #fff !important;
+  border: 1px solid #e3e6dd !important;
+  box-shadow: 0 18px 48px rgba(32,42,37,.16) !important;
+}
+[data-theme='light'] .modal-backdrop {
+  background: rgba(25,38,31,.32) !important;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+[data-theme='light'] table { color: #34443a !important; }
+[data-theme='light'] th {
+  color: #77847a !important;
+  background: #f7f7f2 !important;
+}
+[data-theme='light'] td,
+[data-theme='light'] th { border-color: #e9ebe4 !important; }
+[data-theme='light'] tr:hover td { background: #f8faf6 !important; }
+
+@media (hover: none) {
+  [data-theme='light'] .card:hover { transform: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='light'] *,
+  [data-theme='light'] *::before,
+  [data-theme='light'] *::after { transition-duration: .01ms !important; }
+}
