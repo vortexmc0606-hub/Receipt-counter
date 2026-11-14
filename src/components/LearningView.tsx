@@ -62,7 +62,9 @@ export function LearningView({
           The app learns from corrections you make in the review screen — product names, categories,
           store identities, recurring OCR text mistakes, and lines that are not items. Those safe
           corrections can help on later scans. Previous prices are kept only as historical reference:
-          the price read from each new receipt is always preserved. Learning stays on this device.
+          the price read from each new receipt is always preserved. A built-in catalog of store names
+          and aliases is loaded into the local database automatically; your own corrections are added
+          on top. Learning stays on this device.
         </p>
         <div className="row" style={{ gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
           <div>
@@ -83,7 +85,7 @@ export function LearningView({
           </div>
           <div>
             <div className="stat-value">{summary.stores}</div>
-            <div className="stat-label">Stores learned</div>
+            <div className="stat-label">Stores in database</div>
           </div>
           <div>
             <div className="stat-value">{summary.taxRates}</div>

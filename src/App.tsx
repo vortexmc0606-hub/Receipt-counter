@@ -16,7 +16,7 @@ import {
   saveMemory,
   saveSettings,
 } from './lib/db';
-import { EMPTY_LEARNING, learnFromSave, type LearningData } from './lib/learning';
+import { EMPTY_LEARNING, learnFromSave, seedTrainingStoreCatalog, type LearningData } from './lib/learning';
 import type { ParsedReceipt } from './lib/parser';
 import { todayISO } from './lib/dates';
 import { download, receiptsToCSV } from './lib/utils';
@@ -139,7 +139,7 @@ export default function App() {
     if (!data || !Array.isArray(data.items)) throw new Error('That file is not a learning export.');
     const merged: LearningData = {
       ...EMPTY_LEARNING,
-      ...data,
+      ...seedTrainingStoreCatalog({ ...EMPTY_LEARNING, ...data }),
       version: 1,
     };
     await saveLearning(merged);
@@ -153,7 +153,7 @@ export default function App() {
 
   const handleClearLearning = useCallback(async () => {
     await clearLearning();
-    setLearning(EMPTY_LEARNING);
+    setLearning(seedTrainingStoreCatalog(EMPTY_LEARNING));
   }, []);
 
   const handleImport = useCallback(
