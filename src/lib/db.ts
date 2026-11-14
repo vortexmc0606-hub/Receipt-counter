@@ -77,12 +77,12 @@ export async function loadSettings(): Promise<Settings> {
   // Order: defaults, then whatever the user saved, then the build-time values.
   // The build-time values win so a shared key can never be shadowed by a stale
   // value left in this browser.
-  return { ...DEFAULT_SETTINGS, ...(stored ?? {}), ...env };
+  return { ...DEFAULT_SETTINGS, ...(stored ?? {}), ...env, theme: 'dark' };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
   const db = await getDB();
-  await db.put('settings', settings, 'app');
+  await db.put('settings', { ...settings, theme: 'dark' }, 'app');
 }
 
 export async function loadLearning(): Promise<LearningData> {
