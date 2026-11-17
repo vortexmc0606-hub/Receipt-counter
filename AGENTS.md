@@ -130,6 +130,29 @@ Prefer real code paths over mocks.
   then `git push origin main`, then reset the remote to the plain URL. Never commit the token.
 - Never force-push. Keep commits small and descriptive.
 
+## Hosting / deploy notes (verified)
+
+- **Playable site:** `https://vortexmc0606-hub.github.io/Receipt-counter/`. The
+  `deploy-pages.yml` workflow builds with `GITHUB_PAGES=true` and publishes on
+  **every push to `main`** (it used to be manual-only, which left the site
+  stale). Verify a deploy with the Actions API and by checking the live
+  `assets/index-*.js` hash matches the local build.
+- **Cloudflare Pages is the intended production host** (`deploy-cloudflare.yml`)
+  but its deploy step fails with "set a CLOUDFLARE_API_TOKEN" until the
+  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are added.
+  GitHub Pages is the working fallback in the meantime.
+- **Static assets** belong in `public/` (Vite copies them to `dist/` root).
+  Reference them with `import.meta.env.BASE_URL` so they resolve under the
+  `/Receipt-counter/` base. `public/` is currently empty.
+- **Size limits (GitHub, verified):** individual files are hard-blocked above
+  100 MiB; pushes warn above 50 MiB; repos are recommended under 1 GB. GitHub
+  Pages does **not** serve Git LFS content — an LFS pointer would deploy as a
+  tiny text file. For a few ~40 MB files, keep them plain in the repo (fine) or
+  host them off-repo and link out.
+- **This workspace's clone can be behind.** `git fetch origin --prune` and
+  compare `git rev-parse main` with `git ls-remote origin main` before making
+  any claim about what is deployed.
+
 
 ## UI system — Volt Blue (Lumen)
 
