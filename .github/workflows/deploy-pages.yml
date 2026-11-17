@@ -1,7 +1,11 @@
 name: Deploy to GitHub Pages
 
 on:
-  # Cloudflare Pages is the production host. Keep this workflow manual for fallback deploys only.
+  # Publish the playable site on every push to main. Cloudflare Pages is the
+  # production host when its token is configured; this keeps a working GitHub
+  # Pages copy available regardless.
+  push:
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
